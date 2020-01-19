@@ -8,6 +8,7 @@ _SITE_PRESETS=(php wordpress drupal magento)
 _DB_NAME=""
 _DB_USER=""
 _DB_PASSWORD=""
+_DB_HOST=""
 
 __parse_args() {
     local _MATCH=""
@@ -568,6 +569,7 @@ _add_site() {
     echo "_DB_NAME=$_DB_NAME"
     echo "_DB_USER=$_DB_USER"
     echo "_DB_PASSWORD=$_DB_PASSWORD"
+    echo "_DB_HOST=$_DB_HOST"
 
     __print_divider
 }
@@ -593,6 +595,13 @@ _create_database() {
         read -p "Enter MySQL database password: " _DB_PASSWORD
     done
 
+    _DB_HOST=$(__parse_args db_host ${@})
+
+    while [[ -z "$_DB_HOST" ]]; do
+        read -p "Enter MySQL hostname: [%]" _DB_HOST
+        _DB_HOST=${_DB_HOST:-"%"}
+    done
+
     local _MYSQL_ROOT_PASSWORD=$(__parse_args mysql_root_password ${@})
 
     while [[ -z "$_MYSQL_ROOT_PASSWORD" ]]; do
@@ -601,8 +610,8 @@ _create_database() {
     done
 
     local _SQL_CREATE_DATABASE="CREATE DATABASE IF NOT EXISTS ${_DB_NAME};"
-    local _SQL_CREATE_USER="CREATE USER IF NOT EXISTS '${_DB_USER}'@'%' IDENTIFIED BY '${_DB_PASSWORD}';"
-    local _SQL_GRANT="GRANT ALL PRIVILEGES ON ${_DB_NAME}.* TO '${_DB_USER}'@'%';"
+    local _SQL_CREATE_USER="CREATE USER IF NOT EXISTS '${_DB_USER}'@'${_DB_HOST}' IDENTIFIED BY '${_DB_PASSWORD}';"
+    local _SQL_GRANT="GRANT ALL PRIVILEGES ON ${_DB_NAME}.* TO '${_DB_USER}'@'${_DB_HOST}';"
     local _SQL_FLUSH="FLUSH PRIVILEGES;"
 
     $_BIN_MYSQL -u root -p${_MYSQL_ROOT_PASSWORD} -e "${_SQL_CREATE_DATABASE}${_SQL_CREATE_USER}${_SQL_GRANT}${_SQL_FLUSH}"
