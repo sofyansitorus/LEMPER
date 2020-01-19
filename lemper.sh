@@ -10,31 +10,6 @@ _DB_USER=""
 _DB_PASSWORD=""
 _DB_HOST=""
 
-__parse_args() {
-    local _MATCH=""
-
-    for _ARGUMENT in "${@:2}"; do
-        local _KEY=$(echo $_ARGUMENT | cut -f1 -d=)
-        local _VALUE=$(echo $_ARGUMENT | cut -f2 -d=)
-
-        if [ "--$1" = "$_KEY" ]; then
-            _MATCH=$_VALUE
-        fi
-    done
-
-    echo "${_MATCH}"
-}
-
-__print_header() {
-    printf '%*s\n' "${COLUMNS:-$(tput cols)}" '' | tr ' ' +
-    echo -e ">>> $1"
-    printf '%*s\n' "${COLUMNS:-$(tput cols)}" '' | tr ' ' +
-}
-
-__print_divider() {
-    printf '%*s\n\n' "${COLUMNS:-$(tput cols)}" '' | tr ' ' =
-}
-
 _check_os() {
     __print_header "Checking operating system requirements"
 
@@ -48,180 +23,24 @@ _check_os() {
     __print_divider
 }
 
-_cleaning_up() {
-    __print_header "Cleaning up"
-
-    sudo apt-get -y autoremove
-
-    __print_divider
-}
-
-_add_ppa() {
-    local _NEED_UPDATE=0
-
-    for _APT_REPOSITORIY in ${_APT_REPOSITORIES[@]}; do
-        grep -h "^deb.*$_APT_REPOSITORIY" /etc/apt/sources.list.d/* >/dev/null 2>&1
-
-        if [ $? -ne 0 ]; then
-            __print_header "Adding ppa:$_APT_REPOSITORIY"
-
-            sudo add-apt-repository -y ppa:$_APT_REPOSITORIY
-
-            __print_divider
-
-            _NEED_UPDATE=1
-        fi
-    done
-
-    if [ "$_NEED_UPDATE" = "1" ]; then
-        __print_header "Updating package lists"
-
-        sudo apt-get -y update
-
-        __print_divider
-    fi
-}
-
 _install() {
     __print_header "Starting the install procedure"
     __print_divider
 
     _check_os
 
-    _add_ppa
+    __add_ppa
 
-    _install_common ${@}
-    _install_nginx ${@}
-    _install_mariadb ${@}
-    _install_php ${@}
-    _install_composer ${@}
-    _install_wp_cli ${@}
-    _install_nodejs ${@}
-    _install_yarn ${@}
+    __install_common ${@}
+    __install_nginx ${@}
+    __install_mariadb ${@}
+    __install_php ${@}
+    __install_composer ${@}
+    __install_wp_cli ${@}
+    __install_nodejs ${@}
+    __install_yarn ${@}
 
-    _cleaning_up
-}
-
-_install_common() {
-    __print_header "Installing common packages"
-
-    local _INSTALL_PACKAGES=""
-
-    for _COMMON_PACKAGE in ${_COMMON_PACKAGES[@]}; do
-        _INSTALL_PACKAGES+=" ${_COMMON_PACKAGE}"
-    done
-
-    sudo apt-get -y --no-upgrade install ${_INSTALL_PACKAGES}
-
-    __print_divider
-}
-
-_install_nginx() {
-    sudo dpkg --get-selections | grep -v deinstall | grep "nginx" >/dev/null 2>&1
-
-    if [ $? -ne 0 ]; then
-        _purge_apache
-    fi
-
-    __print_header "Installing NGINX"
-
-    sudo apt-get -y --no-upgrade install nginx
-
-    __print_divider
-}
-
-_install_apache() {
-    __print_header "Installing Apache"
-
-    sudo apt-get -y --no-upgrade install apache2
-
-    __print_divider
-}
-
-_install_mariadb() {
-    __print_header "Installing MariaDB server"
-
-    if ! which mariadb >/dev/null 2>&1; then
-        local _MYSQL_ROOT_PASSWORD=$(__parse_args mysql_root_password ${@})
-
-        while [[ -z "$_MYSQL_ROOT_PASSWORD" ]]; do
-            read -p "Enter MySQL Root Password: [root]" _MYSQL_ROOT_PASSWORD
-            _MYSQL_ROOT_PASSWORD=${_MYSQL_ROOT_PASSWORD:-"root"}
-        done
-
-        #set password from provided arg
-        sudo debconf-set-selections <<<"mariadb-server mysql-server/root_password password $_MYSQL_ROOT_PASSWORD"
-        sudo debconf-set-selections <<<"mariadb-server mysql-server/root_password_again password $_MYSQL_ROOT_PASSWORD"
-    fi
-
-    sudo apt-get -y install --no-upgrade mariadb-server
-
-    __print_divider
-}
-
-_install_php() {
-    for _PHP_VERSION in ${_PHP_VERSIONS[@]}; do
-
-        for _PHP_EXTENSION in ${_PHP_EXTENSIONS[@]}; do
-            __print_header "Installing PHP extension: php${_PHP_VERSION}-${_PHP_EXTENSION}"
-
-            sudo apt-get -y --no-upgrade install "php${_PHP_VERSION}-${_PHP_EXTENSION}"
-
-            __print_divider
-        done
-    done
-}
-
-_install_composer() {
-    __print_header "Installing Composer"
-
-    sudo apt-get -y --no-upgrade install composer
-
-    __print_divider
-}
-
-_install_wp_cli() {
-    __print_header "Installing WP-CLI"
-
-    if ! which wp >/dev/null 2>&1; then
-        curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
-        chmod +x wp-cli.phar
-        sudo mv wp-cli.phar /usr/local/bin/wp
-    fi
-
-    wp --info --allow-root
-
-    __print_divider
-}
-
-_install_nodejs() {
-    __print_header "Installing NodeJS"
-
-    if ! which nodejs >/dev/null 2>&1; then
-        curl -sL https://deb.nodesource.com/setup_12.x | -E bash -
-    fi
-
-    sudo apt-get -y --no-upgrade install nodejs
-
-    __print_divider
-}
-
-_install_yarn() {
-    __print_header "Installing Yarn"
-
-    echo -e "Installing Yarn"
-
-    if [ ! -f "/etc/apt/sources.list.d/yarn.list" ]; then
-        curl -sL https://dl.yarnpkg.com/debian/pubkey.gpg | apt-key add -
-
-        echo "deb https://dl.yarnpkg.com/debian/ stable main" | tee /etc/apt/sources.list.d/yarn.list
-
-        sudo apt-get -y update
-    fi
-
-    sudo apt-get -y --no-upgrade install yarn
-
-    __print_divider
+    __cleaning_up
 }
 
 _purge() {
@@ -230,86 +49,18 @@ _purge() {
 
     _check_os
 
-    _purge_yarn ${@}
-    _purge_nodejs ${@}
-    _purge_wp_cli ${@}
-    _purge_composer ${@}
-    _purge_php ${@}
-    _purge_mariadb ${@}
-    _purge_nginx ${@}
+    __purge_yarn ${@}
+    __purge_nodejs ${@}
+    __purge_wp_cli ${@}
+    __purge_composer ${@}
+    __purge_php ${@}
+    __purge_mariadb ${@}
+    __purge_nginx ${@}
 
-    _cleaning_up
+    __cleaning_up
 }
 
-_purge_nginx() {
-    __print_header "Purging NGINX"
-
-    sudo apt-get -y purge nginx*
-
-    __print_divider
-
-    _install_apache
-}
-
-_purge_apache() {
-    __print_header "Purging Apache"
-
-    sudo apt-get -y purge apache\*
-
-    __print_divider
-}
-
-_purge_mariadb() {
-    __print_header "Purging MariaDB"
-
-    sudo apt-get -y purge mariadb*
-
-    __print_divider
-}
-
-_purge_php() {
-    __print_header "Purging PHP"
-
-    sudo apt-get -y --purge remove php-common
-
-    __print_divider
-}
-
-_purge_composer() {
-    __print_header "Purging Composer"
-
-    sudo apt-get -y purge composer
-
-    __print_divider
-}
-
-_purge_wp_cli() {
-    __print_header "Purging WP-CLI"
-
-    wp --info --allow-root
-
-    rm -rf /usr/local/bin/wp
-
-    __print_divider
-}
-
-_purge_nodejs() {
-    __print_header "Purging NodeJS"
-
-    sudo apt-get -y purge nodejs
-
-    __print_divider
-}
-
-_purge_yarn() {
-    __print_header "Purging Yarn"
-
-    sudo apt-get -y purge yarn
-
-    __print_divider
-}
-
-_useradd() {
+_user_add() {
     __print_header "Adding new user"
 
     if [ $(id -u) -ne 0 ]; then
@@ -349,11 +100,11 @@ _useradd() {
     __print_divider
 
     for _PHP_VERSION in ${_PHP_VERSIONS[@]}; do
-        _create_pool_d "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}"
+        _php_fpm_pool_create "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}"
     done
 }
 
-_userdel() {
+_user_del() {
     local _USERNAME=$(__parse_args username ${@})
 
     while [[ -z "$_USERNAME" ]]; do
@@ -373,7 +124,7 @@ _userdel() {
     fi
 
     for _PHP_VERSION in ${_PHP_VERSIONS[@]}; do
-        _delete_pool_d "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}"
+        _php_fpm_pool_delete "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}"
     done
 
     __print_header "Deleting existing user"
@@ -385,7 +136,7 @@ _userdel() {
     __print_divider
 }
 
-_create_pool_d() {
+_php_fpm_pool_create() {
     __print_header "Adding PHP-FPM pool"
 
     local _USERNAME=$(__parse_args username ${@})
@@ -436,7 +187,7 @@ _create_pool_d() {
     __print_divider
 }
 
-_delete_pool_d() {
+_php_fpm_pool_delete() {
     __print_header "Deleting PHP-FPM pool"
 
     local _USERNAME=$(__parse_args username ${@})
@@ -474,7 +225,7 @@ _delete_pool_d() {
     __print_divider
 }
 
-_add_site() {
+_site_add() {
     __print_header "Adding new site"
 
     local _USERNAME=$(__parse_args username ${@})
@@ -540,7 +291,7 @@ _add_site() {
         done
     fi
 
-    local _CREATE_DATABASE=$(__parse_args create_database ${@})
+    local _CREATE_DATABASE=$(__parse_args database_add ${@})
 
     if [ -z "$_CREATE_DATABASE" ]; then
         read -p "Do you want to create database (y/n)? " _CREATE_DATABASE
@@ -556,7 +307,7 @@ _add_site() {
     fi
 
     if [ "$_CREATE_DATABASE" = "yes" ]; then
-        _create_database ${@}
+        _database_add ${@}
     fi
 
     echo "_USERNAME=$_USERNAME"
@@ -574,7 +325,7 @@ _add_site() {
     __print_divider
 }
 
-_create_database() {
+_database_add() {
     _BIN_MYSQL=$(which mysql)
 
     _DB_NAME=$(__parse_args db_name ${@})
@@ -617,9 +368,275 @@ _create_database() {
     $_BIN_MYSQL -u root -p${_MYSQL_ROOT_PASSWORD} -e "${_SQL_CREATE_DATABASE}${_SQL_CREATE_USER}${_SQL_GRANT}${_SQL_FLUSH}"
 }
 
+__parse_args() {
+    local _MATCH=""
+
+    for _ARGUMENT in "${@:2}"; do
+        local _KEY=$(echo $_ARGUMENT | cut -f1 -d=)
+        local _VALUE=$(echo $_ARGUMENT | cut -f2 -d=)
+
+        if [ "--$1" = "$_KEY" ]; then
+            _MATCH=$_VALUE
+        fi
+    done
+
+    echo "${_MATCH}"
+}
+
+__print_header() {
+    __print_divider "+"
+    echo -e ">>> $1"
+    __print_divider "+"
+}
+
+__print_divider() {
+    local _CHAR=$1
+
+    if [ -z "$_CHAR" ]; then
+        _CHAR="="
+    fi
+
+    printf '%*s\n' "${COLUMNS:-$(tput cols)}" '' | tr ' ' ${_CHAR}
+}
+
+__cleaning_up() {
+    __print_header "Cleaning up"
+
+    sudo apt-get -y autoremove
+
+    __print_divider
+}
+
+__add_ppa() {
+    local _NEED_UPDATE=0
+
+    for _APT_REPOSITORIY in ${_APT_REPOSITORIES[@]}; do
+        grep -h "^deb.*$_APT_REPOSITORIY" /etc/apt/sources.list.d/* >/dev/null 2>&1
+
+        if [ $? -ne 0 ]; then
+            __print_header "Adding ppa:$_APT_REPOSITORIY"
+
+            sudo add-apt-repository -y ppa:$_APT_REPOSITORIY
+
+            __print_divider
+
+            _NEED_UPDATE=1
+        fi
+    done
+
+    if [ "$_NEED_UPDATE" = "1" ]; then
+        __print_header "Updating package lists"
+
+        sudo apt-get -y update
+
+        __print_divider
+    fi
+}
+
+__install_common() {
+    __print_header "Installing common packages"
+
+    local _INSTALL_PACKAGES=""
+
+    for _COMMON_PACKAGE in ${_COMMON_PACKAGES[@]}; do
+        _INSTALL_PACKAGES+=" ${_COMMON_PACKAGE}"
+    done
+
+    sudo apt-get -y --no-upgrade install ${_INSTALL_PACKAGES}
+
+    __print_divider
+}
+
+__install_nginx() {
+    sudo dpkg --get-selections | grep -v deinstall | grep "nginx" >/dev/null 2>&1
+
+    if [ $? -ne 0 ]; then
+        __purge_apache
+    fi
+
+    __print_header "Installing NGINX"
+
+    sudo apt-get -y --no-upgrade install nginx
+
+    __print_divider
+}
+
+__install_apache() {
+    __print_header "Installing Apache"
+
+    sudo apt-get -y --no-upgrade install apache2
+
+    __print_divider
+}
+
+__install_mariadb() {
+    __print_header "Installing MariaDB server"
+
+    if ! which mariadb >/dev/null 2>&1; then
+        local _MYSQL_ROOT_PASSWORD=$(__parse_args mysql_root_password ${@})
+
+        while [[ -z "$_MYSQL_ROOT_PASSWORD" ]]; do
+            read -p "Enter MySQL Root Password: [root]" _MYSQL_ROOT_PASSWORD
+            _MYSQL_ROOT_PASSWORD=${_MYSQL_ROOT_PASSWORD:-"root"}
+        done
+
+        #set password from provided arg
+        sudo debconf-set-selections <<<"mariadb-server mysql-server/root_password password $_MYSQL_ROOT_PASSWORD"
+        sudo debconf-set-selections <<<"mariadb-server mysql-server/root_password_again password $_MYSQL_ROOT_PASSWORD"
+    fi
+
+    sudo apt-get -y install --no-upgrade mariadb-server
+
+    __print_divider
+}
+
+__install_php() {
+    for _PHP_VERSION in ${_PHP_VERSIONS[@]}; do
+
+        for _PHP_EXTENSION in ${_PHP_EXTENSIONS[@]}; do
+            __print_header "Installing PHP extension: php${_PHP_VERSION}-${_PHP_EXTENSION}"
+
+            sudo apt-get -y --no-upgrade install "php${_PHP_VERSION}-${_PHP_EXTENSION}"
+
+            __print_divider
+        done
+    done
+}
+
+__install_composer() {
+    __print_header "Installing Composer"
+
+    sudo apt-get -y --no-upgrade install composer
+
+    __print_divider
+}
+
+__install_wp_cli() {
+    __print_header "Installing WP-CLI"
+
+    if ! which wp >/dev/null 2>&1; then
+        curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+        chmod +x wp-cli.phar
+        sudo mv wp-cli.phar /usr/local/bin/wp
+    fi
+
+    wp --info --allow-root
+
+    __print_divider
+}
+
+__install_nodejs() {
+    __print_header "Installing NodeJS"
+
+    if ! which nodejs >/dev/null 2>&1; then
+        curl -sL https://deb.nodesource.com/setup_12.x | -E bash -
+    fi
+
+    sudo apt-get -y --no-upgrade install nodejs
+
+    __print_divider
+}
+
+__install_yarn() {
+    __print_header "Installing Yarn"
+
+    echo -e "Installing Yarn"
+
+    if [ ! -f "/etc/apt/sources.list.d/yarn.list" ]; then
+        curl -sL https://dl.yarnpkg.com/debian/pubkey.gpg | apt-key add -
+
+        echo "deb https://dl.yarnpkg.com/debian/ stable main" | tee /etc/apt/sources.list.d/yarn.list
+
+        sudo apt-get -y update
+    fi
+
+    sudo apt-get -y --no-upgrade install yarn
+
+    __print_divider
+}
+
+__purge_nginx() {
+    __print_header "Purging NGINX"
+
+    sudo apt-get -y purge nginx*
+
+    __print_divider
+
+    __install_apache
+}
+
+__purge_apache() {
+    __print_header "Purging Apache"
+
+    sudo apt-get -y purge apache\*
+
+    __print_divider
+}
+
+__purge_mariadb() {
+    __print_header "Purging MariaDB"
+
+    sudo apt-get -y purge mariadb*
+
+    __print_divider
+}
+
+__purge_php() {
+    __print_header "Purging PHP"
+
+    sudo apt-get -y --purge remove php-common
+
+    __print_divider
+}
+
+__purge_composer() {
+    __print_header "Purging Composer"
+
+    sudo apt-get -y purge composer
+
+    __print_divider
+}
+
+__purge_wp_cli() {
+    __print_header "Purging WP-CLI"
+
+    wp --info --allow-root
+
+    rm -rf /usr/local/bin/wp
+
+    __print_divider
+}
+
+__purge_nodejs() {
+    __print_header "Purging NodeJS"
+
+    sudo apt-get -y purge nodejs
+
+    __print_divider
+}
+
+__purge_yarn() {
+    __print_header "Purging Yarn"
+
+    sudo apt-get -y purge yarn
+
+    __print_divider
+}
+
 # Execute the main command
-main() {
+__main() {
     _CALLBACK=$(echo ${1} | sed 's/^_\+\(.*\)$/\1/')
+
+    while [[ -z "$_CALLBACK" ]]; do
+        echo -e "Select action you want to execute"
+
+        local _CALLBACKS=$(typeset -f | awk '/ \(\) $/ && !/^__/ {print $1}' | sed 's/^_\+\(.*\)$/\1/')
+
+        select _ITEM in ${_CALLBACKS[@]}; do
+            _CALLBACK=${_ITEM}
+            break
+        done
+    done
 
     declare -f -F "_$_CALLBACK" >/dev/null
 
@@ -631,4 +648,4 @@ main() {
     eval "_$_CALLBACK" ${@:2}
 }
 
-main $@
+__main $@
