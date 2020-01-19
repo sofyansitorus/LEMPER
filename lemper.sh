@@ -27,9 +27,9 @@ _install() {
     __print_header "Starting the install procedure"
     __print_divider
 
-    _check_os
+    _check_os ${@}
 
-    __add_ppa
+    __add_ppa ${@}
 
     __install_common ${@}
     __install_nginx ${@}
@@ -40,14 +40,14 @@ _install() {
     __install_nodejs ${@}
     __install_yarn ${@}
 
-    __cleaning_up
+    __cleaning_up ${@}
 }
 
 _purge() {
     __print_header "Starting the purge procedure"
     __print_divider
 
-    _check_os
+    _check_os ${@}
 
     __purge_yarn ${@}
     __purge_nodejs ${@}
@@ -57,16 +57,11 @@ _purge() {
     __purge_mariadb ${@}
     __purge_nginx ${@}
 
-    __cleaning_up
+    __cleaning_up ${@}
 }
 
 _user_add() {
     __print_header "Adding new user"
-
-    if [ $(id -u) -ne 0 ]; then
-        echo "Only root may add a user to the system"
-        exit 1
-    fi
 
     local _USERNAME=$(__parse_args username ${@})
 
@@ -89,10 +84,29 @@ _user_add() {
 
     local _CRYPTED_PASS=$(perl -e 'print crypt($ARGV[0], "password")' $_PASSWORD)
 
+    local _SUDO=$(__parse_args sudo ${@})
+
+    if [ -z "$_SUDO" ]; then
+        read -p "Do you want to add user to sudo group (y/n)? " _SUDO
+
+        case ${_SUDO:0:1} in
+        y | Y | yes)
+            _SUDO="yes"
+            ;;
+        *)
+            _SUDO="no"
+            ;;
+        esac
+    fi
+
     useradd -m -p $_CRYPTED_PASS $_USERNAME
 
     if [ $? -ne 0 ]; then
         echo -e "Failed to add a user!"
+    fi
+
+    if [ "$_SUDO" = "yes" ]; then
+        sudo usermod -aG sudo ${_USERNAME}
     fi
 
     echo -e "User $_USERNAME has been added to system!"
