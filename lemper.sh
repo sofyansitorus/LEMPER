@@ -610,16 +610,16 @@ _create_database() {
 
 # Execute the main command
 main() {
-    _CALLBACK=$(echo ${1} | sed 's/^_\+\(.*\)$/\1/' | xargs -t -i echo "_{}")
+    _CALLBACK=$(echo ${1} | sed 's/^_\+\(.*\)$/\1/')
 
-    declare -f -F $_CALLBACK >/dev/null
+    declare -f -F "_$_CALLBACK" >/dev/null
 
     if [ $? -ne 0 ]; then
-        echo "Function $_CALLBACK does not exist!"
+        echo "Function _$_CALLBACK does not exist!"
         exit 1
     fi
 
-    eval $_CALLBACK ${@:2}
+    eval "_$_CALLBACK" ${@:2}
 }
 
 main $@
