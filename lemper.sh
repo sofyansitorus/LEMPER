@@ -517,13 +517,24 @@ _add_site() {
         esac
     fi
 
+    local _PHP_VERSION=$(__parse_args php_version ${@})
+
+    if [ -z "$_PHP_VERSION" ]; then
+        echo -e "Select the PHP version configuration"
+
+        select _ITEM in ${_PHP_VERSIONS[@]}; do
+            _PHP_VERSION=$_ITEM
+            break
+        done
+    fi
+
     local _SITE_PRESET=$(__parse_args site_preset ${@})
 
     if [ -z "$_SITE_PRESET" ]; then
         echo -e "Select site configuration preset"
 
-        select _PRESET_ITEM in ${_SITE_PRESETS[@]}; do
-            _SITE_PRESET=$_PRESET_ITEM
+        select _ITEM in ${_SITE_PRESETS[@]}; do
+            _SITE_PRESET=$_ITEM
             break
         done
     fi
@@ -551,6 +562,7 @@ _add_site() {
     echo "_DOMAIN=$_DOMAIN"
     echo "_SUBDOMAIN=$_SUBDOMAIN"
     echo "_ENABLE_SSL=$_ENABLE_SSL"
+    echo "_PHP_VERSION=$_PHP_VERSION"
     echo "_SITE_PRESET=$_SITE_PRESET"
     echo "_CREATE_DATABASE=$_CREATE_DATABASE"
     echo "_DB_NAME=$_DB_NAME"
