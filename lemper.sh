@@ -11,24 +11,11 @@ _DB_USER=""
 _DB_PASSWORD=""
 _DB_HOST=""
 
-_check_os() {
-    __print_header "Checking operating system requirements"
-
-    if ! grep -q 'debian' /etc/os-release; then
-        echo "Script only supported for Debian operating system family"
-        exit 1
-    fi
-
-    cat /etc/os-release
-
-    __print_divider
-}
-
 _install() {
     __print_header "Starting the install procedure"
     __print_divider
 
-    _check_os ${@}
+    __check_os ${@}
 
     __add_ppa ${@}
 
@@ -48,7 +35,7 @@ _purge() {
     __print_header "Starting the purge procedure"
     __print_divider
 
-    _check_os ${@}
+    __check_os ${@}
 
     __purge_yarn ${@}
     __purge_nodejs ${@}
@@ -655,6 +642,19 @@ _database_add() {
     local _SQL_FLUSH="FLUSH PRIVILEGES;"
 
     mysql -u root -p${_MYSQL_ROOT_PASSWORD} -e "${_SQL_CREATE_DATABASE}${_SQL_CREATE_USER}${_SQL_GRANT}${_SQL_FLUSH}"
+}
+
+__check_os() {
+    __print_header "Checking operating system requirements"
+
+    if ! grep -q 'debian' /etc/os-release; then
+        echo "Script only supported for Debian operating system family"
+        exit 1
+    fi
+
+    cat /etc/os-release
+
+    __print_divider
 }
 
 __parse_args() {
