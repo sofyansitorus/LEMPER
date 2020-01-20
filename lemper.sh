@@ -1,11 +1,13 @@
 #!/bin/bash
 
+_REPO_BASE_URL="https://raw.githubusercontent.com/sofyansitorus/LEMPER/master"
 _CWD=$(pwd)
 _APT_REPOSITORIES=(universe ppa:ondrej/php ppa:certbot/certbot)
 _COMMON_PACKAGES=(software-properties-common dialog apt-utils gcc g++ make curl wget git zip unzip openssl)
 _PHP_VERSIONS=(5.6 7.0 7.1 7.2 7.3 7.4)
 _PHP_EXTENSIONS=(cli fpm gd mysql curl zip xdebug)
 _SITE_PRESETS=(php wordpress)
+
 _DB_NAME=""
 _DB_USER=""
 _DB_PASSWORD=""
@@ -204,7 +206,7 @@ _php_pool_add() {
     if [ -f "./template/php_pool.conf" ]; then
         sudo cp "./template/php_pool.conf" "${_CONF_FILE}"
     else
-        sudo wget -O "${_CONF_FILE}" "https://raw.githubusercontent.com/sofyansitorus/LEMPER/master/template/php_pool.conf"
+        sudo wget -O "${_CONF_FILE}" "${_REPO_BASE_URL}/template/php_pool.conf"
     fi
 
     sed -i -e "s#{{USERNAME}}#${_USERNAME}#g" "${_CONF_FILE}"
@@ -288,7 +290,7 @@ _php_fastcgi_add() {
     if [ -f "./template/php_fastcgi.conf" ]; then
         sudo cp -p "./template/php_fastcgi.conf" "${_CONF_FILE}"
     else
-        sudo wget -O "${_CONF_FILE}" "https://raw.githubusercontent.com/sofyansitorus/LEMPER/master/template/php_fastcgi.conf"
+        sudo wget -O "${_CONF_FILE}" "${_REPO_BASE_URL}/template/php_fastcgi.conf"
     fi
 
     sed -i -e "s#{{SOCK_FILE}}#${_SOCK_FILE}#g" "${_CONF_FILE}"
@@ -459,7 +461,7 @@ _site_add() {
     if [ -f "./template/preset/${_SITE_PRESET}.conf" ]; then
         sudo cp "./template/preset/${_SITE_PRESET}.conf" "${_CONF_SITE_AVAILABLE}"
     else
-        sudo wget -O "${_CONF_SITE_AVAILABLE}" "https://raw.githubusercontent.com/sofyansitorus/LEMPER/master/template/preset/${_SITE_PRESET}.conf"
+        sudo wget -O "${_CONF_SITE_AVAILABLE}" "${_REPO_BASE_URL}/template/preset/${_SITE_PRESET}.conf"
     fi
 
     sed -i -e "s/{{USERNAME}}/${_USERNAME}/g" "${_CONF_SITE_AVAILABLE}"
@@ -857,7 +859,7 @@ __install_nginx() {
         if [ -f "./nginx/$_CONF_FILE" ]; then
             sudo cp "./nginx/$_CONF_FILE" "/etc/nginx/${_CONF_FILE}"
         else
-            sudo wget -O "/etc/nginx/${_CONF_FILE}" "https://raw.githubusercontent.com/sofyansitorus/LEMPER/master/nginx/$_CONF_FILE"
+            sudo wget -O "/etc/nginx/${_CONF_FILE}" "${_REPO_BASE_URL}/nginx/$_CONF_FILE"
         fi
     done
 
