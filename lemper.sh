@@ -399,31 +399,27 @@ _site_add() {
     local _PHP_VERSION=$(__parse_args php_version ${@})
 
     if [ -z "$_PHP_VERSION" ]; then
-        echo -e "Select the PHP version configuration"
+        echo -e "Select the PHP version configuration: [7.2]"
 
         select _ITEM in ${_PHP_VERSIONS[@]}; do
             _PHP_VERSION=$_ITEM
             break
         done
-    fi
 
-    if [ -z "$_PHP_VERSION" ] || [[ " ${_PHP_VERSIONS[*]} " == *" ${_PHP_VERSION} "* ]]; then
-        _PHP_VERSION="7.2"
+        _PHP_VERSION=${_PHP_VERSION:-"7.2"}
     fi
 
     local _SITE_PRESET=$(__parse_args site_preset ${@})
 
     if [ -z "$_SITE_PRESET" ]; then
-        echo -e "Select site configuration preset"
+        echo -e "Select site configuration preset: [php] "
 
         select _ITEM in ${_SITE_PRESETS[@]}; do
             _SITE_PRESET=$_ITEM
             break
         done
-    fi
 
-    if [ -z "$_SITE_PRESET" ] || [[ " ${_SITE_PRESETS[*]} " == *" ${_SITE_PRESET} "* ]]; then
-        _SITE_PRESET="php"
+        _SITE_PRESET=${_SITE_PRESET:-"php"}
     fi
 
     local _CREATE_DATABASE=$(__parse_args database_add ${@})
@@ -456,6 +452,89 @@ _site_add() {
     echo "_DB_USER=$_DB_USER"
     echo "_DB_PASSWORD=$_DB_PASSWORD"
     echo "_DB_HOST=$_DB_HOST"
+
+    local _CONF_AVAILABLE="/etc/nginx/sites-available/${_USERNAME}_${_DOMAIN}.conf"
+    local _CONF_ENABLED="/etc/nginx/sites-enabled/${_USERNAME}_${_DOMAIN}.conf"
+
+    if [ -f "./template/preset/${_SITE_PRESET}.conf" ]; then
+        sudo cp "./template/preset/${_SITE_PRESET}.conf" "${_CONF_AVAILABLE}"
+    else
+        sudo wget -O "${_CONF_AVAILABLE}" "https://github.com/sofyansitorus/LEMPER/blob/master/template/preset/${_SITE_PRESET}.conf"
+    fi
+
+    sed -i -e "s/{{USERNAME}}/${_USERNAME}/g" "${_CONF_AVAILABLE}"
+    sed -i -e "s/{{PHP_VERSION}}/${_PHP_VERSION}/g" "${_CONF_AVAILABLE}"
+    sed -i -e "s/{{DOMAIN}}/${_DOMAIN}/g" "${_CONF_AVAILABLE}"
+    sed -i -e "s/{{SUBDOMAIN}}/${_SUBDOMAIN}/g" "${_CONF_AVAILABLE}"
+
+    sudo ln -s "${_CONF_AVAILABLE}" "${_CONF_ENABLED}"
+
+    sudo nginx -t && sudo systemctl reload nginx
+
+    sudo mkdir -p "/home/${_USERNAME}/www/${_DOMAIN}/public"
+    sudo chown -R "${_USERNAME}:${_USERNAME}" "/home/${_USERNAME}/www"
+
+    __print_divider
+}
+
+_site_delete() {
+    __print_header "Deleting existing site"
+
+    local _USERNAME=$(__parse_args username ${@})
+
+    while [[ -z "$_USERNAME" ]]; do
+        read -p "Enter system user as the site owner: [$USER] " _USERNAME
+        _USERNAME=${_USERNAME:-$USER}
+    done
+
+    egrep "^$_USERNAME" /etc/passwd >/dev/null
+
+    if [ $? -ne 0 ]; then
+        echo "User $_USERNAME not exists!"
+        exit 1
+    fi
+
+    local _DOMAIN=$(__parse_args domain ${@})
+
+    while [[ -z "$_DOMAIN" ]]; do
+        read -p "Enter domain: " _DOMAIN
+    done
+
+    local _DELETE_FILES=$(__parse_args delete_files ${@})
+
+    if [ -z "$_DELETE_FILES" ]; then
+        read -p "Do you want to delete site files (y/n)? [no] " _DELETE_FILES
+
+        case ${_DELETE_FILES:0:1} in
+        y | Y | yes)
+            _DELETE_FILES="yes"
+            ;;
+        *)
+            _DELETE_FILES="no"
+            ;;
+        esac
+    fi
+
+    local _CONF_ENABLED="/etc/nginx/sites-enabled/${_USERNAME}_${_DOMAIN}.conf"
+
+    if [ -f "${_CONF_ENABLED}" ]; then
+        sudo rm -rf "${_CONF_ENABLED}"
+        sudo nginx -t && sudo systemctl reload nginx
+    fi
+
+    local _CONF_AVAILABLE="/etc/nginx/sites-available/${_USERNAME}_${_DOMAIN}.conf"
+
+    if [ -f "${_CONF_AVAILABLE}" ]; then
+        sudo rm -rf "${_CONF_AVAILABLE}"
+    fi
+
+    if [ "$_DELETE_FILES"="yes" ]; then
+        local _SITE_ROOT="/home/${_USERNAME}/www/${_DOMAIN}"
+
+        if [ -d "${_SITE_ROOT}" ]; then
+            sudo rm -rf "${_SITE_ROOT}"
+        fi
+    fi
 
     __print_divider
 }
