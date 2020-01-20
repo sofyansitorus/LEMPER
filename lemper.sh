@@ -5,7 +5,7 @@ _APT_REPOSITORIES=(ondrej/php)
 _COMMON_PACKAGES=(software-properties-common dialog apt-utils gcc g++ make curl wget git zip unzip)
 _PHP_VERSIONS=(5.6 7.0 7.1 7.2 7.3 7.4)
 _PHP_EXTENSIONS=(cli fpm gd mysql curl zip xdebug)
-_SITE_PRESETS=(php wordpress drupal magento)
+_SITE_PRESETS=(php wordpress)
 _DB_NAME=""
 _DB_USER=""
 _DB_PASSWORD=""
@@ -80,7 +80,38 @@ _user_add() {
     local _PASSWORD=$(__parse_args password ${@})
 
     while [[ -z "$_PASSWORD" ]]; do
-        read -p "Enter password: " _PASSWORD
+        echo -n "Enter password: "
+        stty -echo
+
+        #read password
+        local _CHARCOUNT=0
+        local _PROMPT=''
+
+        while IFS= read -p "$_PROMPT" -r -s -n 1 ch; do
+            # Enter - accept password
+            if [[ $ch == $'\0' ]]; then
+                break
+            fi
+
+            # Backspace
+            if [[ $ch == $'\177' ]]; then
+                if [ $_CHARCOUNT -gt 0 ]; then
+                    _CHARCOUNT=$((_CHARCOUNT - 1))
+                    _PROMPT=$'\b \b'
+                    _PASSWORD="${_PASSWORD%?}"
+                else
+                    _PROMPT=''
+                fi
+            else
+                _CHARCOUNT=$((_CHARCOUNT + 1))
+                _PROMPT='*'
+                _PASSWORD+="$ch"
+            fi
+        done
+
+        stty echo
+
+        echo
     done
 
     local _CRYPTED_PASS=$(perl -e 'print crypt($ARGV[0], "password")' $_PASSWORD)
@@ -221,7 +252,7 @@ _php_fastcgi_add() {
         read -p "Enter PHP Version: " _PHP_VERSION
     done
 
-    local _CONF_DEST="/etc/nginx/nginxconfig.io/php${_PHP_VERSION}_fastcgi_${_USERNAME}.conf"
+    local _CONF_DEST="/etc/nginx/nginxconfig.io/${_USERNAME}_php${_PHP_VERSION}_fastcgi.conf"
 
     echo "Copying file ${_CONF_DEST}"
 
@@ -327,7 +358,7 @@ _site_add() {
     local _USERNAME=$(__parse_args username ${@})
 
     while [[ -z "$_USERNAME" ]]; do
-        read -p "Enter username: [$USER]" _USERNAME
+        read -p "Enter system user as the site owner: [$USER] " _USERNAME
         _USERNAME=${_USERNAME:-$USER}
     done
 
@@ -376,6 +407,10 @@ _site_add() {
         done
     fi
 
+    if [ -z "$_PHP_VERSION" ] || [[ " ${_PHP_VERSIONS[*]} " == *" ${_PHP_VERSION} "* ]]; then
+        _PHP_VERSION="7.2"
+    fi
+
     local _SITE_PRESET=$(__parse_args site_preset ${@})
 
     if [ -z "$_SITE_PRESET" ]; then
@@ -385,6 +420,10 @@ _site_add() {
             _SITE_PRESET=$_ITEM
             break
         done
+    fi
+
+    if [ -z "$_SITE_PRESET" ] || [[ " ${_SITE_PRESETS[*]} " == *" ${_SITE_PRESET} "* ]]; then
+        _SITE_PRESET="php"
     fi
 
     local _CREATE_DATABASE=$(__parse_args database_add ${@})
@@ -403,7 +442,7 @@ _site_add() {
     fi
 
     if [ "$_CREATE_DATABASE" = "yes" ]; then
-        _database_add ${@}
+        _database_add "--username=${_USERNAME}" ${@}
     fi
 
     echo "_USERNAME=$_USERNAME"
@@ -422,7 +461,19 @@ _site_add() {
 }
 
 _database_add() {
-    _BIN_MYSQL=$(which mysql)
+    local _USERNAME=$(__parse_args username ${@})
+
+    while [[ -z "$_USERNAME" ]]; do
+        read -p "Enter system user that will be used as database prefix: [$USER] " _USERNAME
+        _USERNAME=${_USERNAME:-$USER}
+    done
+
+    egrep "^$_USERNAME" /etc/passwd >/dev/null
+
+    if [ $? -ne 0 ]; then
+        echo "User $_USERNAME not exists!"
+        exit 1
+    fi
 
     _DB_NAME=$(__parse_args db_name ${@})
 
@@ -439,7 +490,38 @@ _database_add() {
     _DB_PASSWORD=$(__parse_args db_password ${@})
 
     while [[ -z "$_DB_PASSWORD" ]]; do
-        read -p "Enter MySQL database password: " _DB_PASSWORD
+        echo -n "Enter MySQL database password: "
+        stty -echo
+
+        #read password
+        local _CHARCOUNT=0
+        local _PROMPT=''
+
+        while IFS= read -p "$_PROMPT" -r -s -n 1 ch; do
+            # Enter - accept password
+            if [[ $ch == $'\0' ]]; then
+                break
+            fi
+
+            # Backspace
+            if [[ $ch == $'\177' ]]; then
+                if [ $_CHARCOUNT -gt 0 ]; then
+                    _CHARCOUNT=$((_CHARCOUNT - 1))
+                    _PROMPT=$'\b \b'
+                    _DB_PASSWORD="${_DB_PASSWORD%?}"
+                else
+                    _PROMPT=''
+                fi
+            else
+                _CHARCOUNT=$((_CHARCOUNT + 1))
+                _PROMPT='*'
+                _DB_PASSWORD+="$ch"
+            fi
+        done
+
+        stty echo
+
+        echo
     done
 
     _DB_HOST=$(__parse_args db_host ${@})
@@ -452,16 +534,48 @@ _database_add() {
     local _MYSQL_ROOT_PASSWORD=$(__parse_args mysql_root_password ${@})
 
     while [[ -z "$_MYSQL_ROOT_PASSWORD" ]]; do
-        read -p "Enter MySQL Root Password: [root]" _MYSQL_ROOT_PASSWORD
+        echo -n "Enter MySQL Root Password: [root]"
+        stty -echo
+
+        #read password
+        local _CHARCOUNT=0
+        local _PROMPT=''
+
+        while IFS= read -p "$_PROMPT" -r -s -n 1 ch; do
+            # Enter - accept password
+            if [[ $ch == $'\0' ]]; then
+                break
+            fi
+
+            # Backspace
+            if [[ $ch == $'\177' ]]; then
+                if [ $_CHARCOUNT -gt 0 ]; then
+                    _CHARCOUNT=$((_CHARCOUNT - 1))
+                    _PROMPT=$'\b \b'
+                    _MYSQL_ROOT_PASSWORD="${_MYSQL_ROOT_PASSWORD%?}"
+                else
+                    _PROMPT=''
+                fi
+            else
+                _CHARCOUNT=$((_CHARCOUNT + 1))
+                _PROMPT='*'
+                _MYSQL_ROOT_PASSWORD+="$ch"
+            fi
+        done
+
+        stty echo
+
+        echo
+
         _MYSQL_ROOT_PASSWORD=${_MYSQL_ROOT_PASSWORD:-"root"}
     done
 
-    local _SQL_CREATE_DATABASE="CREATE DATABASE IF NOT EXISTS ${_DB_NAME};"
-    local _SQL_CREATE_USER="CREATE USER IF NOT EXISTS '${_DB_USER}'@'${_DB_HOST}' IDENTIFIED BY '${_DB_PASSWORD}';"
-    local _SQL_GRANT="GRANT ALL PRIVILEGES ON ${_DB_NAME}.* TO '${_DB_USER}'@'${_DB_HOST}';"
+    local _SQL_CREATE_DATABASE="CREATE DATABASE IF NOT EXISTS ${_USERNAME}_${_DB_NAME};"
+    local _SQL_CREATE_USER="CREATE USER IF NOT EXISTS '${_USERNAME}_${_DB_USER}'@'${_DB_HOST}' IDENTIFIED BY '${_DB_PASSWORD}';"
+    local _SQL_GRANT="GRANT ALL PRIVILEGES ON ${_USERNAME}_${_DB_NAME}.* TO '${_USERNAME}_${_DB_USER}'@'${_DB_HOST}';"
     local _SQL_FLUSH="FLUSH PRIVILEGES;"
 
-    $_BIN_MYSQL -u root -p${_MYSQL_ROOT_PASSWORD} -e "${_SQL_CREATE_DATABASE}${_SQL_CREATE_USER}${_SQL_GRANT}${_SQL_FLUSH}"
+    mysql -u root -p${_MYSQL_ROOT_PASSWORD} -e "${_SQL_CREATE_DATABASE}${_SQL_CREATE_USER}${_SQL_GRANT}${_SQL_FLUSH}"
 }
 
 __parse_args() {
@@ -601,7 +715,39 @@ __install_mariadb() {
         local _MYSQL_ROOT_PASSWORD=$(__parse_args mysql_root_password ${@})
 
         while [[ -z "$_MYSQL_ROOT_PASSWORD" ]]; do
-            read -p "Enter MySQL Root Password: [root]" _MYSQL_ROOT_PASSWORD
+            echo -n "Enter MySQL Root Password: [root]"
+            stty -echo
+
+            #read password
+            local _CHARCOUNT=0
+            local _PROMPT=''
+
+            while IFS= read -p "$_PROMPT" -r -s -n 1 ch; do
+                # Enter - accept password
+                if [[ $ch == $'\0' ]]; then
+                    break
+                fi
+
+                # Backspace
+                if [[ $ch == $'\177' ]]; then
+                    if [ $_CHARCOUNT -gt 0 ]; then
+                        _CHARCOUNT=$((_CHARCOUNT - 1))
+                        _PROMPT=$'\b \b'
+                        _MYSQL_ROOT_PASSWORD="${_MYSQL_ROOT_PASSWORD%?}"
+                    else
+                        _PROMPT=''
+                    fi
+                else
+                    _CHARCOUNT=$((_CHARCOUNT + 1))
+                    _PROMPT='*'
+                    _MYSQL_ROOT_PASSWORD+="$ch"
+                fi
+            done
+
+            stty echo
+
+            echo
+
             _MYSQL_ROOT_PASSWORD=${_MYSQL_ROOT_PASSWORD:-"root"}
         done
 
