@@ -1,8 +1,8 @@
 #!/bin/bash
 
 _CWD=$(pwd)
-_APT_REPOSITORIES=(ondrej/php)
-_COMMON_PACKAGES=(software-properties-common dialog apt-utils gcc g++ make curl wget git zip unzip)
+_APT_REPOSITORIES=(universe ppa:ondrej/php ppa:certbot/certbot)
+_COMMON_PACKAGES=(software-properties-common dialog apt-utils gcc g++ make curl wget git zip unzip openssl)
 _PHP_VERSIONS=(5.6 7.0 7.1 7.2 7.3 7.4)
 _PHP_EXTENSIONS=(cli fpm gd mysql curl zip xdebug)
 _SITE_PRESETS=(php wordpress)
@@ -21,6 +21,7 @@ _install() {
 
     __install_common ${@}
     __install_nginx ${@}
+    __install_certbot ${@}
     __install_mariadb ${@}
     __install_php ${@}
     __install_composer ${@}
@@ -195,62 +196,19 @@ _php_pool_add() {
         read -p "Enter PHP Version: " _PHP_VERSION
     done
 
-    local _CONF_DEST="/etc/php/${_PHP_VERSION}/fpm/pool.d/${_USERNAME}.conf"
+    local _CONF_FILE=$(__php_pool_conf_file ${@})
+    local _SOCK_FILE=$(__php_fastcgi_sock_file ${@})
 
-    echo "Copying file ${_CONF_DEST}"
+    echo "Copying file ${_CONF_FILE}"
 
     if [ -f "./template/php_pool.conf" ]; then
-        sudo cp "./template/php_pool.conf" "${_CONF_DEST}"
+        sudo cp "./template/php_pool.conf" "${_CONF_FILE}"
     else
-        sudo wget -O "${_CONF_DEST}" "https://github.com/sofyansitorus/LEMPER/blob/master/template/php_pool.conf"
+        sudo wget -O "${_CONF_FILE}" "https://raw.githubusercontent.com/sofyansitorus/LEMPER/master/template/php_pool.conf"
     fi
 
-    sed -i -e "s/{{USERNAME}}/${_USERNAME}/g" "${_CONF_DEST}"
-    sed -i -e "s/{{PHP_VERSION}}/${_PHP_VERSION}/g" "${_CONF_DEST}"
-
-    local _RESTART_SERVICE=$(__parse_args restart_service ${@})
-
-    if [ "$_RESTART_SERVICE" != "no" ]; then
-        sudo service "php${_PHP_VERSION}-fpm" restart
-    fi
-
-    __print_divider
-}
-
-_php_fastcgi_add() {
-    __print_header "Adding PHP-FastCGI configuration file"
-
-    local _USERNAME=$(__parse_args username ${@})
-
-    while [[ -z "$_USERNAME" ]]; do
-        read -p "Enter Username: " _USERNAME
-    done
-
-    egrep "^$_USERNAME" /etc/passwd >/dev/null
-
-    if [ $? -ne 0 ]; then
-        echo "User $_USERNAME not exists!"
-        exit 1
-    fi
-
-    local _PHP_VERSION=$(__parse_args php_version ${@})
-
-    while [[ -z "$_PHP_VERSION" ]]; do
-        read -p "Enter PHP Version: " _PHP_VERSION
-    done
-
-    local _CONF_DEST="/etc/nginx/nginxconfig.io/${_USERNAME}_php${_PHP_VERSION}_fastcgi.conf"
-
-    echo "Copying file ${_CONF_DEST}"
-
-    if [ -f "./template/php_fastcgi.conf" ]; then
-        sudo cp -p "./template/php_fastcgi.conf" "${_CONF_DEST}"
-    else
-        sudo wget -O "${_CONF_DEST}" "https://github.com/sofyansitorus/LEMPER/blob/master/template/php_fastcgi.conf"
-    fi
-
-    sed -i -e "s/{{USERNAME}}/${_USERNAME}/g" "${_CONF_DEST}"
-    sed -i -e "s/{{PHP_VERSION}}/${_PHP_VERSION}/g" "${_CONF_DEST}"
+    sed -i -e "s#{{USERNAME}}#${_USERNAME}#g" "${_CONF_FILE}"
+    sed -i -e "s#{{SOCK_FILE}}#${_SOCK_FILE}#g" "${_CONF_FILE}"
 
     local _RESTART_SERVICE=$(__parse_args restart_service ${@})
 
@@ -283,13 +241,57 @@ _php_pool_delete() {
         read -p "Enter PHP Version: " _PHP_VERSION
     done
 
-    local _CONF_DEST="/etc/php/${_PHP_VERSION}/fpm/pool.d/${_USERNAME}.conf"
+    local _CONF_FILE=$(__php_pool_conf_file ${@})
 
-    if [ -f "$_CONF_DEST" ]; then
-        echo "Deleting file ${_CONF_DEST}"
+    if [ -f "$_CONF_FILE" ]; then
+        echo "Deleting file ${_CONF_FILE}"
 
-        sudo rm -rf "${_CONF_DEST}"
+        sudo rm -rf "${_CONF_FILE}"
     fi
+
+    local _RESTART_SERVICE=$(__parse_args restart_service ${@})
+
+    if [ "$_RESTART_SERVICE" != "no" ]; then
+        sudo service "php${_PHP_VERSION}-fpm" restart
+    fi
+
+    __print_divider
+}
+
+_php_fastcgi_add() {
+    __print_header "Adding PHP-FastCGI configuration file"
+
+    local _USERNAME=$(__parse_args username ${@})
+
+    while [[ -z "$_USERNAME" ]]; do
+        read -p "Enter Username: " _USERNAME
+    done
+
+    egrep "^$_USERNAME" /etc/passwd >/dev/null
+
+    if [ $? -ne 0 ]; then
+        echo "User $_USERNAME not exists!"
+        exit 1
+    fi
+
+    local _PHP_VERSION=$(__parse_args php_version ${@})
+
+    while [[ -z "$_PHP_VERSION" ]]; do
+        read -p "Enter PHP Version: " _PHP_VERSION
+    done
+
+    local _CONF_FILE=$(__php_fastcgi_conf_file ${@})
+    local _SOCK_FILE=$(__php_fastcgi_sock_file ${@})
+
+    echo "Copying file ${_CONF_FILE}"
+
+    if [ -f "./template/php_fastcgi.conf" ]; then
+        sudo cp -p "./template/php_fastcgi.conf" "${_CONF_FILE}"
+    else
+        sudo wget -O "${_CONF_FILE}" "https://raw.githubusercontent.com/sofyansitorus/LEMPER/master/template/php_fastcgi.conf"
+    fi
+
+    sed -i -e "s#{{SOCK_FILE}}#${_SOCK_FILE}#g" "${_CONF_FILE}"
 
     local _RESTART_SERVICE=$(__parse_args restart_service ${@})
 
@@ -322,12 +324,12 @@ _php_fastcgi_delete() {
         read -p "Enter PHP Version: " _PHP_VERSION
     done
 
-    local _CONF_DEST="/etc/nginx/nginxconfig.io/php${_PHP_VERSION}_fastcgi_${_USERNAME}.conf"
+    local _CONF_FILE=$(__php_fastcgi_conf_file ${@})
 
-    if [ -f "$_CONF_DEST" ]; then
-        echo "Deleting file ${_CONF_DEST}"
+    if [ -f "$_CONF_FILE" ]; then
+        echo "Deleting file ${_CONF_FILE}"
 
-        sudo rm -rf "${_CONF_DEST}"
+        sudo rm -rf "${_CONF_FILE}"
     fi
 
     local _RESTART_SERVICE=$(__parse_args restart_service ${@})
@@ -362,25 +364,10 @@ _site_add() {
         read -p "Enter domain: " _DOMAIN
     done
 
-    local _SUBDOMAIN=$(__parse_args subdomain ${@})
+    local _EXTRA_DOMAINS=$(__parse_args extra_domains ${@})
 
-    if [ -z "$_SUBDOMAIN" ]; then
-        read -p "Enter subdomain: " _SUBDOMAIN
-    fi
-
-    local _ENABLE_SSL=$(__parse_args enable_ssl ${@})
-
-    if [ -z "$_ENABLE_SSL" ]; then
-        read -p "Do you want to enable SSL (y/n)? " _ENABLE_SSL
-
-        case ${_ENABLE_SSL:0:1} in
-        y | Y | yes)
-            _ENABLE_SSL="yes"
-            ;;
-        *)
-            _ENABLE_SSL="no"
-            ;;
-        esac
+    if [ -z "$_EXTRA_DOMAINS" ]; then
+        read -p "Enter extra domains (Separate witch space for multiple domains): " _EXTRA_DOMAINS
     fi
 
     local _PHP_VERSION=$(__parse_args php_version ${@})
@@ -409,7 +396,7 @@ _site_add() {
         _SITE_PRESET=${_SITE_PRESET:-"php"}
     fi
 
-    local _CREATE_DATABASE=$(__parse_args database_add ${@})
+    local _CREATE_DATABASE=$(__parse_args create_database ${@})
 
     if [ -z "$_CREATE_DATABASE" ]; then
         read -p "Do you want to create database (y/n)? " _CREATE_DATABASE
@@ -428,10 +415,33 @@ _site_add() {
         _database_add "--username=${_USERNAME}" ${@}
     fi
 
+    local _ENABLE_SSL=$(__parse_args enable_ssl ${@})
+
+    if [ -z "$_ENABLE_SSL" ]; then
+        read -p "Do you want to enable SSL (y/n)? " _ENABLE_SSL
+
+        case ${_ENABLE_SSL:0:1} in
+        y | Y | yes)
+            _ENABLE_SSL="yes"
+            ;;
+        *)
+            _ENABLE_SSL="no"
+            ;;
+        esac
+    fi
+
+    _ADMIN_EMAIL=$(__parse_args admin_email ${@})
+
+    if [ "$_ENABLE_SSL" = "yes" ]; then
+        while [[ -z "$_ADMIN_EMAIL" ]]; do
+            read -p "Enter email address for the site administrator: [info@${_DOMAIN}] " _ADMIN_EMAIL
+            _ADMIN_EMAIL=${_ADMIN_EMAIL:-"info@${_DOMAIN}"}
+        done
+    fi
+
     echo "_USERNAME=$_USERNAME"
     echo "_DOMAIN=$_DOMAIN"
-    echo "_SUBDOMAIN=$_SUBDOMAIN"
-    echo "_ENABLE_SSL=$_ENABLE_SSL"
+    echo "_EXTRA_DOMAINS=$_EXTRA_DOMAINS"
     echo "_PHP_VERSION=$_PHP_VERSION"
     echo "_SITE_PRESET=$_SITE_PRESET"
     echo "_CREATE_DATABASE=$_CREATE_DATABASE"
@@ -439,27 +449,54 @@ _site_add() {
     echo "_DB_USER=$_DB_USER"
     echo "_DB_PASSWORD=$_DB_PASSWORD"
     echo "_DB_HOST=$_DB_HOST"
+    echo "_ENABLE_SSL=$_ENABLE_SSL"
+    echo "_ADMIN_EMAIL=$_ADMIN_EMAIL"
 
-    local _CONF_AVAILABLE="/etc/nginx/sites-available/${_USERNAME}_${_DOMAIN}.conf"
-    local _CONF_ENABLED="/etc/nginx/sites-enabled/${_USERNAME}_${_DOMAIN}.conf"
+    # start creating site procedure
+    local _CONF_SITE_AVAILABLE="/etc/nginx/sites-available/${_USERNAME}_${_DOMAIN}.conf"
+    local _CONF_SITE_ENABLED="/etc/nginx/sites-enabled/${_USERNAME}_${_DOMAIN}.conf"
 
     if [ -f "./template/preset/${_SITE_PRESET}.conf" ]; then
-        sudo cp "./template/preset/${_SITE_PRESET}.conf" "${_CONF_AVAILABLE}"
+        sudo cp "./template/preset/${_SITE_PRESET}.conf" "${_CONF_SITE_AVAILABLE}"
     else
-        sudo wget -O "${_CONF_AVAILABLE}" "https://github.com/sofyansitorus/LEMPER/blob/master/template/preset/${_SITE_PRESET}.conf"
+        sudo wget -O "${_CONF_SITE_AVAILABLE}" "https://raw.githubusercontent.com/sofyansitorus/LEMPER/master/template/preset/${_SITE_PRESET}.conf"
     fi
 
-    sed -i -e "s/{{USERNAME}}/${_USERNAME}/g" "${_CONF_AVAILABLE}"
-    sed -i -e "s/{{PHP_VERSION}}/${_PHP_VERSION}/g" "${_CONF_AVAILABLE}"
-    sed -i -e "s/{{DOMAIN}}/${_DOMAIN}/g" "${_CONF_AVAILABLE}"
-    sed -i -e "s/{{SUBDOMAIN}}/${_SUBDOMAIN}/g" "${_CONF_AVAILABLE}"
+    sed -i -e "s/{{USERNAME}}/${_USERNAME}/g" "${_CONF_SITE_AVAILABLE}"
+    sed -i -e "s/{{PHP_VERSION}}/${_PHP_VERSION}/g" "${_CONF_SITE_AVAILABLE}"
+    sed -i -e "s/{{DOMAIN}}/${_DOMAIN}/g" "${_CONF_SITE_AVAILABLE}"
+    sed -i -e "s/{{EXTRA_DOMAINS}}/${_EXTRA_DOMAINS}/g" "${_CONF_SITE_AVAILABLE}"
 
-    sudo ln -s "${_CONF_AVAILABLE}" "${_CONF_ENABLED}"
+    sudo ln -s "${_CONF_SITE_AVAILABLE}" "${_CONF_SITE_ENABLED}"
 
     sudo nginx -t && sudo systemctl reload nginx
 
-    sudo mkdir -p "/home/${_USERNAME}/www/${_DOMAIN}/public"
-    sudo chown -R "${_USERNAME}:${_USERNAME}" "/home/${_USERNAME}/www"
+    local _WWW_ROOT="/home/${_USERNAME}/www"
+    local _SITE_ROOT="${_WWW_ROOT}/${_DOMAIN}"
+    local _LETSENCRYPT_ROOT="${_SITE_ROOT}/.letsencrypt"
+
+    sudo mkdir -p "${_SITE_ROOT}/public"
+    sudo chown -R "${_USERNAME}:${_USERNAME}" "${_WWW_ROOT}"
+
+    if [ "$_ENABLE_SSL" = "yes" ]; then
+        sudo mkdir -p "${_LETSENCRYPT_ROOT}"
+        sudo chown -R "${_USERNAME}:${_USERNAME}" "${_LETSENCRYPT_ROOT}"
+
+        sudo openssl dhparam -out /etc/nginx/dhparam.pem 2048
+        sudo nginx -t && sudo systemctl reload nginx
+
+        sudo certbot certonly --webroot -d ${_DOMAIN} --email ${_ADMIN_EMAIL} -w ${_LETSENCRYPT_ROOT} -n --agree-tos --force-renewal
+        sed -i -r 's/#?;#//g' "${_CONF_SITE_AVAILABLE}"
+        sudo nginx -t && sudo systemctl reload nginx
+
+        if [ ! -f /etc/letsencrypt/renewal-hooks/post/nginx-reload.sh ]; then
+            echo -e '#!/bin/bash\nnginx -t && systemctl reload nginx' | sudo tee /etc/letsencrypt/renewal-hooks/post/nginx-reload.sh
+        fi
+
+        if [ -f /etc/letsencrypt/renewal-hooks/post/nginx-reload.sh ]; then
+            sudo chmod a+x /etc/letsencrypt/renewal-hooks/post/nginx-reload.sh
+        fi
+    fi
 
     __print_divider
 }
@@ -502,17 +539,17 @@ _site_delete() {
         esac
     fi
 
-    local _CONF_ENABLED="/etc/nginx/sites-enabled/${_USERNAME}_${_DOMAIN}.conf"
+    local _CONF_SITE_ENABLED="/etc/nginx/sites-enabled/${_USERNAME}_${_DOMAIN}.conf"
 
-    if [ -f "${_CONF_ENABLED}" ]; then
-        sudo rm -rf "${_CONF_ENABLED}"
+    if [ -f "${_CONF_SITE_ENABLED}" ]; then
+        sudo rm -rf "${_CONF_SITE_ENABLED}"
         sudo nginx -t && sudo systemctl reload nginx
     fi
 
-    local _CONF_AVAILABLE="/etc/nginx/sites-available/${_USERNAME}_${_DOMAIN}.conf"
+    local _CONF_SITE_AVAILABLE="/etc/nginx/sites-available/${_USERNAME}_${_DOMAIN}.conf"
 
-    if [ -f "${_CONF_AVAILABLE}" ]; then
-        sudo rm -rf "${_CONF_AVAILABLE}"
+    if [ -f "${_CONF_SITE_AVAILABLE}" ]; then
+        sudo rm -rf "${_CONF_SITE_AVAILABLE}"
     fi
 
     if [ "$_DELETE_FILES"="yes" ]; then
@@ -644,6 +681,54 @@ _database_add() {
     mysql -u root -p${_MYSQL_ROOT_PASSWORD} -e "${_SQL_CREATE_DATABASE}${_SQL_CREATE_USER}${_SQL_GRANT}${_SQL_FLUSH}"
 }
 
+__php_pool_conf_file() {
+    local _USERNAME=$(__parse_args username ${@})
+
+    while [[ -z "$_USERNAME" ]]; do
+        read -p "Enter Username: " _USERNAME
+    done
+
+    local _PHP_VERSION=$(__parse_args php_version ${@})
+
+    while [[ -z "$_PHP_VERSION" ]]; do
+        read -p "Enter PHP Version: " _PHP_VERSION
+    done
+
+    echo "/etc/php/${_PHP_VERSION}/fpm/pool.d/${_USERNAME}.conf"
+}
+
+__php_fastcgi_conf_file() {
+    local _USERNAME=$(__parse_args username ${@})
+
+    while [[ -z "$_USERNAME" ]]; do
+        read -p "Enter Username: " _USERNAME
+    done
+
+    local _PHP_VERSION=$(__parse_args php_version ${@})
+
+    while [[ -z "$_PHP_VERSION" ]]; do
+        read -p "Enter PHP Version: " _PHP_VERSION
+    done
+
+    echo "/etc/nginx/nginxconfig.io/${_USERNAME}_php${_PHP_VERSION}_fastcgi.conf"
+}
+
+__php_fastcgi_sock_file() {
+    local _USERNAME=$(__parse_args username ${@})
+
+    while [[ -z "$_USERNAME" ]]; do
+        read -p "Enter Username: " _USERNAME
+    done
+
+    local _PHP_VERSION=$(__parse_args php_version ${@})
+
+    while [[ -z "$_PHP_VERSION" ]]; do
+        read -p "Enter PHP Version: " _PHP_VERSION
+    done
+
+    echo "/var/run/${_USERNAME}-php${_PHP_VERSION}-fpm.sock"
+}
+
 __check_os() {
     __print_header "Checking operating system requirements"
 
@@ -703,9 +788,9 @@ __add_ppa() {
         grep -h "^deb.*$_APT_REPOSITORIY" /etc/apt/sources.list.d/* >/dev/null 2>&1
 
         if [ $? -ne 0 ]; then
-            __print_header "Adding ppa:$_APT_REPOSITORIY"
+            __print_header "Adding PPA $_APT_REPOSITORIY"
 
-            sudo add-apt-repository -y ppa:$_APT_REPOSITORIY
+            sudo add-apt-repository -y $_APT_REPOSITORIY
 
             __print_divider
 
@@ -772,9 +857,17 @@ __install_nginx() {
         if [ -f "./nginx/$_CONF_FILE" ]; then
             sudo cp "./nginx/$_CONF_FILE" "/etc/nginx/${_CONF_FILE}"
         else
-            sudo wget -O "/etc/nginx/${_CONF_FILE}" "https://github.com/sofyansitorus/LEMPER/blob/master/nginx/$_CONF_FILE"
+            sudo wget -O "/etc/nginx/${_CONF_FILE}" "https://raw.githubusercontent.com/sofyansitorus/LEMPER/master/nginx/$_CONF_FILE"
         fi
     done
+
+    __print_divider
+}
+
+__install_certbot() {
+    __print_header "Installing Certbot"
+
+    sudo apt-get -y --no-upgrade install certbot
 
     __print_divider
 }
