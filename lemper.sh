@@ -161,6 +161,13 @@ _user_delete() {
         exit 1
     fi
 
+    _SITES=$(find /etc/nginx/sites-available/ -type f -name "${_USERNAME}_*" -print)
+
+    for _SITE in ${_SITES[@]}; do
+        _DOMAIN=$(basename ${_SITE} .conf | sed "s/${_USERNAME}_//g")
+        _site_delete "--username=${_USERNAME}" "--domain=${_DOMAIN}" "--delete_files=yes"
+    done
+
     for _PHP_VERSION in ${_PHP_VERSIONS[@]}; do
         _php_pool_delete "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
         _php_fastcgi_delete "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
@@ -561,6 +568,8 @@ _site_delete() {
             sudo rm -rf "${_SITE_ROOT}"
         fi
     fi
+
+    echo -e "Site ${_DOMAIN} has been deleted"
 
     __print_divider
 }
