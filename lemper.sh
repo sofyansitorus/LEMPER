@@ -1,5 +1,6 @@
 #!/bin/bash
 
+_CWD=$(pwd)
 _APT_REPOSITORIES=(ondrej/php)
 _COMMON_PACKAGES=(software-properties-common dialog apt-utils gcc g++ make curl wget git zip unzip)
 _PHP_VERSIONS=(5.6 7.0 7.1 7.2 7.3 7.4)
@@ -114,11 +115,13 @@ _user_add() {
     __print_divider
 
     for _PHP_VERSION in ${_PHP_VERSIONS[@]}; do
-        _php_fpm_pool_create "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}"
+        _php_pool_add "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
+        _php_fastcgi_add "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
+        sudo service "php${_PHP_VERSION}-fpm" restart
     done
 }
 
-_user_del() {
+_user_delete() {
     local _USERNAME=$(__parse_args username ${@})
 
     while [[ -z "$_USERNAME" ]]; do
@@ -138,7 +141,9 @@ _user_del() {
     fi
 
     for _PHP_VERSION in ${_PHP_VERSIONS[@]}; do
-        _php_fpm_pool_delete "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}"
+        _php_pool_delete "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
+        _php_fastcgi_delete "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
+        sudo service "php${_PHP_VERSION}-fpm" restart
     done
 
     __print_header "Deleting existing user"
@@ -150,7 +155,7 @@ _user_del() {
     __print_divider
 }
 
-_php_fpm_pool_create() {
+_php_pool_add() {
     __print_header "Adding PHP-FPM pool"
 
     local _USERNAME=$(__parse_args username ${@})
@@ -172,36 +177,73 @@ _php_fpm_pool_create() {
         read -p "Enter PHP Version: " _PHP_VERSION
     done
 
-    local _POOL_CONF_SRC="/etc/php/${_PHP_VERSION}/fpm/pool.d/www.conf"
+    local _CONF_DEST="/etc/php/${_PHP_VERSION}/fpm/pool.d/${_USERNAME}.conf"
 
-    if ! [ -f "$_POOL_CONF_SRC" ]; then
-        echo "File $_POOL_CONF_SRC not exist"
-        exit 1
+    echo "Copying file ${_CONF_DEST}"
+
+    if [ -f "./template/php_pool.conf" ]; then
+        sudo cp "./template/php_pool.conf" "${_CONF_DEST}"
+    else
+        sudo wget -O "${_CONF_DEST}" "https://github.com/sofyansitorus/LEMPER/blob/master/template/php_pool.conf"
     fi
 
-    local _POOL_CONF_DEST="/etc/php/${_PHP_VERSION}/fpm/pool.d/${_USERNAME}.conf"
+    sed -i -e "s/{{USERNAME}}/${_USERNAME}/g" "${_CONF_DEST}"
+    sed -i -e "s/{{PHP_VERSION}}/${_PHP_VERSION}/g" "${_CONF_DEST}"
 
-    if [ -f "$_POOL_CONF_DEST" ]; then
-        echo "File $_POOL_CONF_DEST already exist"
-        exit 1
+    local _RESTART_SERVICE=$(__parse_args restart_service ${@})
+
+    if [ "$_RESTART_SERVICE" != "no" ]; then
+        sudo service "php${_PHP_VERSION}-fpm" restart
     fi
-
-    echo "Copying file $_POOL_CONF_SRC ===>>> ${_POOL_CONF_DEST}"
-
-    sudo cp "${_POOL_CONF_SRC}" "${_POOL_CONF_DEST}"
-
-    sed -i -e "s/\[www\]/\[${_USERNAME}\]/g" "${_POOL_CONF_DEST}"
-    sed -i -e "s/www-data/${_USERNAME}/g" "${_POOL_CONF_DEST}"
-    sed -i -e "s/listen.owner = ${_USERNAME}/listen.owner = www-data/g" "${_POOL_CONF_DEST}"
-    sed -i -e "s/listen.group = ${_USERNAME}/listen.group = www-data/g" "${_POOL_CONF_DEST}"
-    sed -i -e "s/\/run\/php\/php${_PHP_VERSION}-fpm\.sock/\/run\/php\/php${_PHP_VERSION}-fpm-${_USERNAME}\.sock/g" "${_POOL_CONF_DEST}"
-
-    sudo service "php${_PHP_VERSION}-fpm" restart
 
     __print_divider
 }
 
-_php_fpm_pool_delete() {
+_php_fastcgi_add() {
+    __print_header "Adding PHP-FastCGI configuration file"
+
+    local _USERNAME=$(__parse_args username ${@})
+
+    while [[ -z "$_USERNAME" ]]; do
+        read -p "Enter Username: " _USERNAME
+    done
+
+    egrep "^$_USERNAME" /etc/passwd >/dev/null
+
+    if [ $? -ne 0 ]; then
+        echo "User $_USERNAME not exists!"
+        exit 1
+    fi
+
+    local _PHP_VERSION=$(__parse_args php_version ${@})
+
+    while [[ -z "$_PHP_VERSION" ]]; do
+        read -p "Enter PHP Version: " _PHP_VERSION
+    done
+
+    local _CONF_DEST="/etc/nginx/nginxconfig.io/php${_PHP_VERSION}_fastcgi_${_USERNAME}.conf"
+
+    echo "Copying file ${_CONF_DEST}"
+
+    if [ -f "./template/php_fastcgi.conf" ]; then
+        sudo cp -p "./template/php_fastcgi.conf" "${_CONF_DEST}"
+    else
+        sudo wget -O "${_CONF_DEST}" "https://github.com/sofyansitorus/LEMPER/blob/master/template/php_fastcgi.conf"
+    fi
+
+    sed -i -e "s/{{USERNAME}}/${_USERNAME}/g" "${_CONF_DEST}"
+    sed -i -e "s/{{PHP_VERSION}}/${_PHP_VERSION}/g" "${_CONF_DEST}"
+
+    local _RESTART_SERVICE=$(__parse_args restart_service ${@})
+
+    if [ "$_RESTART_SERVICE" != "no" ]; then
+        sudo service "php${_PHP_VERSION}-fpm" restart
+    fi
+
+    __print_divider
+}
+
+_php_pool_delete() {
     __print_header "Deleting PHP-FPM pool"
 
     local _USERNAME=$(__parse_args username ${@})
@@ -223,18 +265,58 @@ _php_fpm_pool_delete() {
         read -p "Enter PHP Version: " _PHP_VERSION
     done
 
-    local _POOL_CONF_DEST="/etc/php/${_PHP_VERSION}/fpm/pool.d/${_USERNAME}.conf"
+    local _CONF_DEST="/etc/php/${_PHP_VERSION}/fpm/pool.d/${_USERNAME}.conf"
 
-    if ! [ -f "$_POOL_CONF_DEST" ]; then
-        echo "File $_POOL_CONF_DEST not exist"
+    if [ -f "$_CONF_DEST" ]; then
+        echo "Deleting file ${_CONF_DEST}"
+
+        sudo rm -rf "${_CONF_DEST}"
+    fi
+
+    local _RESTART_SERVICE=$(__parse_args restart_service ${@})
+
+    if [ "$_RESTART_SERVICE" != "no" ]; then
+        sudo service "php${_PHP_VERSION}-fpm" restart
+    fi
+
+    __print_divider
+}
+
+_php_fastcgi_delete() {
+    __print_header "Deleting PHP-FastCGI configuration file"
+
+    local _USERNAME=$(__parse_args username ${@})
+
+    while [[ -z "$_USERNAME" ]]; do
+        read -p "Enter Username: " _USERNAME
+    done
+
+    egrep "^$_USERNAME" /etc/passwd >/dev/null
+
+    if [ $? -ne 0 ]; then
+        echo "User $_USERNAME not exists!"
         exit 1
     fi
 
-    echo "Deleting file ${_POOL_CONF_DEST}"
+    local _PHP_VERSION=$(__parse_args php_version ${@})
 
-    sudo rm -rf "${_POOL_CONF_DEST}"
+    while [[ -z "$_PHP_VERSION" ]]; do
+        read -p "Enter PHP Version: " _PHP_VERSION
+    done
 
-    sudo service "php${_PHP_VERSION}-fpm" restart
+    local _CONF_DEST="/etc/nginx/nginxconfig.io/php${_PHP_VERSION}_fastcgi_${_USERNAME}.conf"
+
+    if [ -f "$_CONF_DEST" ]; then
+        echo "Deleting file ${_CONF_DEST}"
+
+        sudo rm -rf "${_CONF_DEST}"
+    fi
+
+    local _RESTART_SERVICE=$(__parse_args restart_service ${@})
+
+    if [ "$_RESTART_SERVICE" != "no" ]; then
+        sudo service "php${_PHP_VERSION}-fpm" restart
+    fi
 
     __print_divider
 }
@@ -471,6 +553,35 @@ __install_nginx() {
     __print_header "Installing NGINX"
 
     sudo apt-get -y --no-upgrade install nginx
+
+    if [ ! -d "/etc/nginx/nginxconfig.io" ]; then
+        sudo mkdir -p "/etc/nginx/nginxconfig.io"
+    fi
+
+    local _CONF_FILES=(nginx.conf nginxconfig.io/general.conf nginxconfig.io/security.conf nginxconfig.io/wordpress.conf)
+
+    local _CONF_FILES_BACKUP=""
+
+    for _CONF_FILE_BACKUP in ${_CONF_FILES[@]}; do
+        if [ -f "/etc/nginx/$_CONF_FILE_BACKUP" ]; then
+            _CONF_FILES_BACKUP+=" ${_CONF_FILE_BACKUP}"
+        fi
+    done
+
+    if [ -n "$_CONF_FILES_BACKUP" ]; then
+        cd /etc/nginx
+        echo -e "Creating backup for existing confguration files:$_CONF_FILES_BACKUP"
+        sudo tar -zcvf backup_nginx_$(date +'%F_%H-%M-%S').tar.gz $_CONF_FILES_BACKUP >/dev/null
+        cd $_CWD
+    fi
+
+    for _CONF_FILE in ${_CONF_FILES[@]}; do
+        if [ -f "./nginx/$_CONF_FILE" ]; then
+            sudo cp "./nginx/$_CONF_FILE" "/etc/nginx/${_CONF_FILE}"
+        else
+            sudo wget -O "/etc/nginx/${_CONF_FILE}" "https://github.com/sofyansitorus/LEMPER/blob/master/nginx/$_CONF_FILE"
+        fi
+    done
 
     __print_divider
 }
