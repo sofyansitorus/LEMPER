@@ -176,7 +176,7 @@ _user_delete() {
     local _DELETE_FILES=$(__parse_args delete_files ${@})
 
     while [[ -z "$_DELETE_FILES" ]]; do
-        echo -e "Do you want to delete user files?"
+        echo -e "Do you want to delete user files ?"
 
         select _ITEM in ${_OPTIONS_YES_NO[@]}; do
             _DELETE_FILES=$_ITEM
@@ -455,33 +455,23 @@ _site_add() {
     local _USERS=$(__get_existing_users)
 
     if [ -z "$_USERS" ]; then
-        echo "No users available. Please add new using 'user_add' command!"
+        echo "No users available. Please add new using the 'user_add' command!"
         exit 1
     fi
 
     local _USERNAME=$(__parse_args username ${@})
 
     while [[ -z "$_USERNAME" ]]; do
-        if [ $(id -u) -eq 0 ]; then
-            echo -e "Select site owner user: "
-        else
-            echo -e "Select site owner user: [$USER] "
-        fi
+        echo -e "Select user: "
 
         select _ITEM in ${_USERS[@]}; do
-            if [ $(id -u) -ne 0 ]; then
-                _USERNAME=${_ITEM:-$USER}
-            else
-                _USERNAME=${_ITEM}
-            fi
+            _USERNAME=$_ITEM
             break
         done
     done
 
-    egrep "^$_USERNAME" /etc/passwd >/dev/null
-
-    if [ $? -ne 0 ]; then
-        echo "User $_USERNAME not exists!"
+    if [ $(__is_valid_user "$_USERNAME") -ne 0 ]; then
+        echo "User $_USERNAME is invalid!"
         exit 1
     fi
 
@@ -525,18 +515,14 @@ _site_add() {
 
     local _CREATE_DATABASE=$(__parse_args create_database ${@})
 
-    if [ -z "$_CREATE_DATABASE" ]; then
-        read -p "Do you want to create database (y/n)? " _CREATE_DATABASE
+    while [[ -z "$_CREATE_DATABASE" ]]; do
+        echo -e "Do you want to create database? "
 
-        case ${_CREATE_DATABASE:0:1} in
-        y | Y | yes)
-            _CREATE_DATABASE="yes"
-            ;;
-        *)
-            _CREATE_DATABASE="no"
-            ;;
-        esac
-    fi
+        select _ITEM in ${_OPTIONS_YES_NO[@]}; do
+            _CREATE_DATABASE=$_ITEM
+            break
+        done
+    done
 
     if [ "$_CREATE_DATABASE" = "yes" ]; then
         _database_add "--username=${_USERNAME}" ${@}
@@ -544,18 +530,14 @@ _site_add() {
 
     local _ENABLE_SSL=$(__parse_args enable_ssl ${@})
 
-    if [ -z "$_ENABLE_SSL" ]; then
-        read -p "Do you want to enable SSL (y/n)? " _ENABLE_SSL
+    while [[ -z "$_ENABLE_SSL" ]]; do
+        echo -e "Do you want to enable SSL? "
 
-        case ${_ENABLE_SSL:0:1} in
-        y | Y | yes)
-            _ENABLE_SSL="yes"
-            ;;
-        *)
-            _ENABLE_SSL="no"
-            ;;
-        esac
-    fi
+        select _ITEM in ${_OPTIONS_YES_NO[@]}; do
+            _ENABLE_SSL=$_ITEM
+            break
+        done
+    done
 
     _ADMIN_EMAIL=$(__parse_args admin_email ${@})
 
@@ -641,18 +623,16 @@ _site_delete() {
     local _USERNAME=$(__parse_args username ${@})
 
     while [[ -z "$_USERNAME" ]]; do
-        echo -e "Select site owner: "
+        echo -e "Select user: "
 
         select _ITEM in ${_USERS[@]}; do
-            _USERNAME=${_ITEM}
+            _USERNAME=$_ITEM
             break
         done
     done
 
-    egrep "^$_USERNAME" /etc/passwd >/dev/null
-
-    if [ $? -ne 0 ]; then
-        echo "User $_USERNAME not exists!"
+    if [ $(__is_valid_user "$_USERNAME") -ne 0 ]; then
+        echo "User $_USERNAME is invalid!"
         exit 1
     fi
 
@@ -666,34 +646,24 @@ _site_delete() {
     local _DOMAIN=$(__parse_args domain ${@})
 
     while [[ -z "$_DOMAIN" ]]; do
-        local _SITES=$(__get_user_sites $_USERNAME)
+        echo -e "Domain to delete: "
 
-        if [ -n "$_SITES" ]; then
-            echo -e "Domain to delete: "
-
-            select _ITEM in ${_SITES[@]}; do
-                _DOMAIN=${_ITEM}
-                break
-            done
-        else
-            read -p "Domain to delete: " _DOMAIN
-        fi
+        select _ITEM in ${_SITES[@]}; do
+            _DOMAIN=${_ITEM}
+            break
+        done
     done
 
     local _DELETE_FILES=$(__parse_args delete_files ${@})
 
-    if [ -z "$_DELETE_FILES" ]; then
-        read -p "Do you want to delete site files (y/n)? [no] " _DELETE_FILES
+    while [[ -z "$_DELETE_FILES" ]]; do
+        echo -e "Do you want to delete site files ?"
 
-        case ${_DELETE_FILES:0:1} in
-        y | Y | yes)
-            _DELETE_FILES="yes"
-            ;;
-        *)
-            _DELETE_FILES="no"
-            ;;
-        esac
-    fi
+        select _ITEM in ${_OPTIONS_YES_NO[@]}; do
+            _DELETE_FILES=$_ITEM
+            break
+        done
+    done
 
     local _RESTART_SERVICE=$(__parse_args restart_service ${@})
 
