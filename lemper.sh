@@ -143,6 +143,8 @@ _user_add() {
 }
 
 _user_delete() {
+    __print_header "Deleting existing user"
+
     local _USERS=$(__get_existing_users)
 
     if [ -z "$_USERS" ]; then
@@ -215,27 +217,44 @@ _user_delete() {
 _php_pool_add() {
     __print_header "Adding PHP-FPM pool"
 
+    local _USERS=$(__get_existing_users)
+
+    if [ -z "$_USERS" ]; then
+        echo "No users available. Please add new using the 'user_add' command!"
+        exit 1
+    fi
+
     local _USERNAME=$(__parse_args username ${@})
 
     while [[ -z "$_USERNAME" ]]; do
-        read -p "Enter Username: " _USERNAME
+        echo -e "Select user: "
+
+        select _ITEM in ${_USERS[@]}; do
+            _USERNAME=$_ITEM
+            break
+        done
     done
 
-    egrep "^$_USERNAME" /etc/passwd >/dev/null
-
-    if [ $? -ne 0 ]; then
-        echo "User $_USERNAME not exists!"
+    if [ $(__is_valid_user "$_USERNAME") -ne 0 ]; then
+        echo "User $_USERNAME is invalid!"
         exit 1
     fi
 
     local _PHP_VERSION=$(__parse_args php_version ${@})
 
-    while [[ -z "$_PHP_VERSION" ]]; do
-        read -p "Enter PHP Version: " _PHP_VERSION
-    done
+    if [ -z "$_PHP_VERSION" ]; then
+        echo -e "Select the PHP version configuration: [7.2]"
 
-    local _CONF_FILE=$(__php_pool_conf_file ${@})
-    local _SOCK_FILE=$(__php_fastcgi_sock_file ${@})
+        select _ITEM in ${_PHP_VERSIONS[@]}; do
+            _PHP_VERSION=$_ITEM
+            break
+        done
+
+        _PHP_VERSION=${_PHP_VERSION:-"7.2"}
+    fi
+
+    local _CONF_FILE=$(__php_pool_conf_file "--username=${_USERNAME}" "--php_version=${_PHP_VERSION}" ${@})
+    local _SOCK_FILE=$(__php_fastcgi_sock_file "--username=${_USERNAME}" "--php_version=${_PHP_VERSION}" ${@})
 
     echo "Copying file ${_CONF_FILE}"
 
