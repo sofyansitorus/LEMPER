@@ -19,6 +19,7 @@ _lemper_install() {
     __print_divider
 
     __check_os ${@}
+    __purge_apache
 
     __add_ppa ${@}
 
@@ -345,13 +346,13 @@ _php_pool_add() {
 
     echo "Copying file ${_CONF_FILE}"
 
-    if [ -f "./template/php_pool.conf" ]; then
-        sudo cp "./template/php_pool.conf" "${_CONF_FILE}"
-    elif [ -f "/tmp/lemper_template_php_pool.conf" ]; then
-        sudo cp "/tmp/lemper_template_php_pool.conf" "${_CONF_FILE}"
+    if [ -f "./nginx/lemper.io/templates/php_pool.conf" ]; then
+        sudo cp "./nginx/lemper.io/templates/php_pool.conf" "${_CONF_FILE}"
+    elif [ -f "/etc/nginx/lemper.io/templates/php_pool.conf" ]; then
+        sudo cp "/etc/nginx/lemper.io/templates/php_pool.conf" "${_CONF_FILE}"
     else
-        sudo wget -O "/tmp/lemper_template_php_pool.conf" "${_REPO_BASE_URL}/template/php_pool.conf"
-        sudo cp "/tmp/lemper_template_php_pool.conf" "${_CONF_FILE}"
+        sudo wget -O "/etc/nginx/lemper.io/templates/php_pool.conf" "${_REPO_BASE_URL}/nginx/lemper.io/templates/php_pool.conf"
+        sudo cp "/etc/nginx/lemper.io/templates/php_pool.conf" "${_CONF_FILE}"
     fi
 
     sed -i -e "s#{{USERNAME}}#${_USERNAME}#g" "${_CONF_FILE}"
@@ -466,13 +467,13 @@ _php_fastcgi_add() {
 
     echo "Copying file ${_CONF_FILE}"
 
-    if [ -f "./template/php_fastcgi.conf" ]; then
-        sudo cp -p "./template/php_fastcgi.conf" "${_CONF_FILE}"
-    elif [ -f "/tmp/lemper_template_php_fastcgi.conf" ]; then
-        sudo cp "/tmp/lemper_template_php_fastcgi.conf" "${_CONF_FILE}"
+    if [ -f "./nginx/lemper.io/templates/php_fastcgi.conf" ]; then
+        sudo cp "./nginx/lemper.io/templates/php_fastcgi.conf" "${_CONF_FILE}"
+    elif [ -f "/etc/nginx/lemper.io/templates/php_fastcgi.conf" ]; then
+        sudo cp "/etc/nginx/lemper.io/templates/php_fastcgi.conf" "${_CONF_FILE}"
     else
-        sudo wget -O "/tmp/lemper_template_php_fastcgi.conf" "${_REPO_BASE_URL}/template/php_fastcgi.conf"
-        sudo cp "/tmp/lemper_template_php_fastcgi.conf" "${_CONF_FILE}"
+        sudo wget -O "/etc/nginx/lemper.io/templates/php_fastcgi.conf" "${_REPO_BASE_URL}/nginx/lemper.io/templates/php_fastcgi.conf"
+        sudo cp "/etc/nginx/lemper.io/templates/php_fastcgi.conf" "${_CONF_FILE}"
     fi
 
     sed -i -e "s#{{SOCK_FILE}}#${_SOCK_FILE}#g" "${_CONF_FILE}"
@@ -645,13 +646,13 @@ _site_add() {
     local _CONF_SITE_AVAILABLE="/etc/nginx/sites-available/${_USERNAME}_${_DOMAIN}.conf"
     local _CONF_SITE_ENABLED="/etc/nginx/sites-enabled/${_USERNAME}_${_DOMAIN}.conf"
 
-    if [ -f "./template/preset/${_SITE_PRESET}.conf" ]; then
-        sudo cp "./template/preset/${_SITE_PRESET}.conf" "${_CONF_SITE_AVAILABLE}"
-    elif [ -f "/tmp/lemper_template_preset_${_SITE_PRESET}.conf" ]; then
-        sudo cp "/tmp/lemper_template_preset_${_SITE_PRESET}.conf" "${_CONF_SITE_AVAILABLE}"
+    if [ -f "./nginx/lemper.io/presets/${_SITE_PRESET}.conf" ]; then
+        sudo cp "./nginx/lemper.io/presets/${_SITE_PRESET}.conf" "${_CONF_SITE_AVAILABLE}"
+    elif [ -f "/etc/nginx/lemper.io/presets/${_SITE_PRESET}.conf" ]; then
+        sudo cp "/etc/nginx/lemper.io/presets/${_SITE_PRESET}.conf" "${_CONF_SITE_AVAILABLE}"
     else
-        sudo wget -O "/tmp/lemper_template_preset_${_SITE_PRESET}.conf" "${_REPO_BASE_URL}/template/preset/${_SITE_PRESET}.conf"
-        sudo cp "/tmp/lemper_template_preset_${_SITE_PRESET}.conf" "${_CONF_SITE_AVAILABLE}"
+        sudo wget -O "/etc/nginx/lemper.io/presets/${_SITE_PRESET}.conf" "${_REPO_BASE_URL}/nginx/lemper.io/presets/${_SITE_PRESET}.conf"
+        sudo cp "/etc/nginx/lemper.io/presets/${_SITE_PRESET}.conf" "${_CONF_SITE_AVAILABLE}"
     fi
 
     sed -i -e "s/{{USERNAME}}/${_USERNAME}/g" "${_CONF_SITE_AVAILABLE}"
@@ -668,6 +669,16 @@ _site_add() {
     local _LETSENCRYPT_ROOT="${_SITE_ROOT}/.letsencrypt"
 
     sudo mkdir -p "${_SITE_ROOT}/public"
+
+    if [ -f "./nginx/lemper.io/templates/lemper.io.html" ]; then
+        sudo cp "./nginx/lemper.io/templates/lemper.io.html" "${_SITE_ROOT}/public/lemper.io.html"
+    elif [ -f "/etc/nginx/lemper.io/templates/lemper.io.html" ]; then
+        sudo cp "/etc/nginx/lemper.io/templates/lemper.io.html" "${_SITE_ROOT}/public/lemper.io.html"
+    else
+        sudo wget -O "/etc/nginx/lemper.io/templates/lemper.io.html" "${_REPO_BASE_URL}/nginx/lemper.io/templates/lemper.io.html"
+        sudo cp "/etc/nginx/lemper.io/templates/lemper.io.html" "${_SITE_ROOT}/public/lemper.io.html"
+    fi
+
     sudo chown -R "${_USERNAME}:${_USERNAME}" "${_WWW_ROOT}"
 
     if [ "$_ENABLE_SSL" = "yes" ]; then
@@ -930,7 +941,13 @@ __php_fastcgi_conf_file() {
         read -p "Enter PHP Version: " _PHP_VERSION
     done
 
-    echo "/etc/nginx/nginxconfig.io/${_USERNAME}_php${_PHP_VERSION}_fastcgi.conf"
+    local _BASE_DIR="/etc/nginx/lemper.io/fastcgi/${_USERNAME}"
+
+    if [ ! -d "${_BASE_DIR}" ]; then
+        sudo mkdir -p "${_BASE_DIR}"
+    fi
+
+    echo "${_BASE_DIR}/php${_PHP_VERSION}.conf"
 }
 
 __php_fastcgi_sock_file() {
@@ -946,7 +963,13 @@ __php_fastcgi_sock_file() {
         read -p "Enter PHP Version: " _PHP_VERSION
     done
 
-    echo "/var/run/${_USERNAME}-php${_PHP_VERSION}-fpm.sock"
+    local _BASE_DIR="/var/run/lemper.io/${_USERNAME}"
+
+    if [ ! -d "${_BASE_DIR}" ]; then
+        sudo mkdir -p "${_BASE_DIR}"
+    fi
+
+    echo "${_BASE_DIR}/php${_PHP_VERSION}-fpm.sock"
 }
 
 __check_os() {
@@ -1042,51 +1065,81 @@ __install_common() {
 }
 
 __install_nginx() {
-    sudo dpkg --get-selections | grep -v deinstall | grep "nginx" >/dev/null 2>&1
-
-    if [ $? -ne 0 ]; then
-        __purge_apache
-    fi
-
     __print_header "Installing NGINX"
 
     sudo apt-get -y --no-upgrade install nginx
 
-    if [ ! -d "/etc/nginx/nginxconfig.io" ]; then
-        sudo mkdir -p "/etc/nginx/nginxconfig.io"
-    fi
+    echo ""
 
-    local _CONF_FILES=(nginx.conf nginxconfig.io/general.conf nginxconfig.io/security.conf nginxconfig.io/wordpress.conf)
+    local _DIRS=(backup includes presets templates sites)
 
-    local _CONF_FILES_BACKUP=""
-
-    for _CONF_FILE_BACKUP in ${_CONF_FILES[@]}; do
-        if [ -f "/etc/nginx/$_CONF_FILE_BACKUP" ]; then
-            _CONF_FILES_BACKUP+=" ${_CONF_FILE_BACKUP}"
+    for _DIR in ${_DIRS[@]}; do
+        if [ ! -d "/etc/nginx/lemper.io/${_DIR}" ]; then
+            echo -e "Creating lemper.io directory: /etc/nginx/lemper.io/${_DIR}"
+            sudo mkdir -p "/etc/nginx/lemper.io/${_DIR}"
         fi
     done
 
-    if [ -n "$_CONF_FILES_BACKUP" ]; then
-        cd /etc/nginx
-        echo -e "Creating backup for existing confguration files:$_CONF_FILES_BACKUP"
-        sudo tar -zcvf backup_nginx_$(date +'%F_%H-%M-%S').tar.gz $_CONF_FILES_BACKUP >/dev/null
-        cd $_CWD
+    echo ""
+
+    echo -e "Creating backup for existing configuration file: /etc/nginx/nginx.conf"
+
+    sudo cp /etc/nginx/nginx.conf /etc/nginx/lemper.io/backup/nginx.conf_$(date +'%F_%H-%M-%S')
+
+    echo -e "Creating configuration file : /etc/nginx/nginx.conf"
+
+    if [ -f "./nginx/nginx.conf" ]; then
+        sudo cp "./nginx/nginx.conf" "/etc/nginx/nginx.conf"
+    else
+        sudo wget -O "/etc/nginx/nginx.conf" "${_REPO_BASE_URL}/nginx/nginx.conf"
     fi
 
-    for _CONF_FILE in ${_CONF_FILES[@]}; do
-        local _CONF_FILE_FULL="/etc/nginx/${_CONF_FILE}"
-        local _CONF_FILE_TMP=$(echo ${_CONF_FILE} | sed "s#/#_#g")
+    echo ""
 
-        if [ -f "./nginx/$_CONF_FILE" ]; then
-            sudo cp "./nginx/$_CONF_FILE" "${_CONF_FILE_FULL}"
-        elif [ -f "/tmp/lemper_nginx_${_CONF_FILE_TMP}" ]; then
-            sudo cp "/tmp/lemper_nginx_${_CONF_FILE_TMP}" "${_CONF_FILE_FULL}"
+    local _INCLUDE_FILES=(general.conf security.conf wordpress.conf)
+
+    for _INCLUDE_FILE in ${_INCLUDE_FILES[@]}; do
+        local _INCLUDE_FILE_DEST="/etc/nginx/lemper.io/includes/${_INCLUDE_FILE}"
+
+        echo -e "Creating include file : ${_INCLUDE_FILE_DEST}"
+
+        if [ -f "./nginx/lemper.io/includes/$_INCLUDE_FILE" ]; then
+            sudo cp "./nginx/lemper.io/includes/$_INCLUDE_FILE" "${_INCLUDE_FILE_DEST}"
         else
-            sudo wget -O "/tmp/lemper_nginx_${_CONF_FILE_TMP}" "${_REPO_BASE_URL}/nginx/$_CONF_FILE"
-            sudo cp "/tmp/lemper_nginx_${_CONF_FILE_TMP}" "${_CONF_FILE_FULL}"
+            sudo wget -O "${_INCLUDE_FILE_DEST}" "${_REPO_BASE_URL}/nginx/lemper.io/includes/$_INCLUDE_FILE"
         fi
+    done
 
-        echo -e "Configuration file created: $_CONF_FILE_FULL"
+    echo ""
+
+    local _PRESET_FILES=(php.conf wordpress.conf)
+
+    for _PRESET_FILE in ${_PRESET_FILES[@]}; do
+        local _PRESET_FILE_DEST="/etc/nginx/lemper.io/presets/${_PRESET_FILE}"
+
+        echo -e "Creating preset file : ${_PRESET_FILE_DEST}"
+
+        if [ -f "./nginx/lemper.io/presets/$_PRESET_FILE" ]; then
+            sudo cp "./nginx/lemper.io/presets/$_PRESET_FILE" "${_PRESET_FILE_DEST}"
+        else
+            sudo wget -O "${_PRESET_FILE_DEST}" "${_REPO_BASE_URL}/nginx/lemper.io/presets/$_PRESET_FILE"
+        fi
+    done
+
+    echo ""
+
+    local _TEMPLATE_FILES=(php_fastcgi.conf php_pool.conf lemper.io.html)
+
+    for _TEMPLATE_FILE in ${_TEMPLATE_FILES[@]}; do
+        local _TEMPLATE_FILE_DEST="/etc/nginx/lemper.io/templates/${_TEMPLATE_FILE}"
+
+        echo -e "Creating template file : ${_TEMPLATE_FILE_DEST}"
+
+        if [ -f "./nginx/lemper.io/templates/$_TEMPLATE_FILE" ]; then
+            sudo cp "./nginx/lemper.io/templates/$_TEMPLATE_FILE" "${_TEMPLATE_FILE_DEST}"
+        else
+            sudo wget -O "${_TEMPLATE_FILE_DEST}" "${_REPO_BASE_URL}/nginx/lemper.io/templates/$_TEMPLATE_FILE"
+        fi
     done
 
     __print_divider
@@ -1096,14 +1149,6 @@ __install_certbot() {
     __print_header "Installing Certbot"
 
     sudo apt-get -y --no-upgrade install certbot
-
-    __print_divider
-}
-
-__install_apache() {
-    __print_header "Installing Apache"
-
-    sudo apt-get -y --no-upgrade install apache2
 
     __print_divider
 }
@@ -1231,9 +1276,9 @@ __purge_nginx() {
 
     sudo apt-get -y purge nginx*
 
-    __print_divider
+    sudo rm -rf /etc/nginx/lemper.io
 
-    __install_apache
+    __print_divider
 }
 
 __purge_apache() {
