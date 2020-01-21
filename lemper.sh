@@ -3,10 +3,12 @@
 _REPO_BASE_URL="https://raw.githubusercontent.com/sofyansitorus/LEMPER/master"
 _CWD=$(pwd)
 _APT_REPOSITORIES=(universe ppa:ondrej/php ppa:certbot/certbot)
-_COMMON_PACKAGES=(software-properties-common dialog apt-utils gcc g++ make curl wget git zip unzip openssl)
+_COMMON_PACKAGES=(software-properties-common dialog apt-utils gcc g++ make curl wget git zip unzip openssl perl)
 _PHP_VERSIONS=(5.6 7.0 7.1 7.2 7.3 7.4)
 _PHP_EXTENSIONS=(cli fpm gd mysql curl zip xdebug)
 _SITE_PRESETS=(php wordpress)
+_OPTIONS_YES_NO=(yes no)
+_OPTIONS_NO_YES=(no yes)
 
 _DB_NAME=""
 _DB_USER=""
@@ -62,10 +64,11 @@ _user_add() {
 
     egrep "^$_USERNAME" /etc/passwd >/dev/null
 
-    if [ $? -eq 0 ]; then
-        echo "User $_USERNAME already exists!"
-        exit 1
-    fi
+    while [ $? -eq 0 ]; do
+        echo -e "User $_USERNAME already exists"
+        read -p "Enter username: " _USERNAME
+        egrep "^$_USERNAME" /etc/passwd >/dev/null
+    done
 
     local _PASSWORD=$(__parse_args password ${@})
 
@@ -108,23 +111,20 @@ _user_add() {
 
     local _SUDO=$(__parse_args sudo ${@})
 
-    if [ -z "$_SUDO" ]; then
-        read -p "Do you want to add user to sudo group (y/n)? " _SUDO
+    while [[ -z "$_SUDO" ]]; do
+        echo -e "Do you want to add user to sudo group? "
 
-        case ${_SUDO:0:1} in
-        y | Y | yes)
-            _SUDO="yes"
-            ;;
-        *)
-            _SUDO="no"
-            ;;
-        esac
-    fi
+        select _ITEM in ${_OPTIONS_YES_NO[@]}; do
+            _SUDO=$_ITEM
+            break
+        done
+    done
 
-    useradd -m -p $_CRYPTED_PASS $_USERNAME
+    useradd -m -p $_CRYPTED_PASS $_USERNAME >/dev/null
 
     if [ $? -ne 0 ]; then
         echo -e "Failed to add a user!"
+        exit 1
     fi
 
     if [ "$_SUDO" = "yes" ]; then
@@ -143,40 +143,69 @@ _user_add() {
 }
 
 _user_delete() {
+    local _USERS=$(__get_existing_users)
+
+    if [ -z "$_USERS" ]; then
+        echo "No users available. Please add new using the 'user_add' command!"
+        exit 1
+    fi
+
     local _USERNAME=$(__parse_args username ${@})
 
     while [[ -z "$_USERNAME" ]]; do
-        read -p "Enter username: " _USERNAME
+        echo -e "Select user to delete: "
+
+        select _ITEM in ${_USERS[@]}; do
+            _USERNAME=$_ITEM
+            break
+        done
     done
 
-    egrep "^$_USERNAME" /etc/passwd >/dev/null
-
-    if [ $? -ne 0 ]; then
-        echo "User $_USERNAME not exists!"
+    if [ $(__is_valid_user "$_USERNAME") -ne 0 ]; then
+        echo "User $_USERNAME is invalid!"
         exit 1
     fi
 
-    if [ "$_USERNAME" = "root" ]; then
-        echo "User root cannot be deleted"
+    if [ "$_USERNAME" = "$USER" ]; then
+        echo "You are not allowed to delete your own account!"
         exit 1
     fi
 
-    _SITES=$(find /etc/nginx/sites-available/ -type f -name "${_USERNAME}_*" -print)
+    local _DELETE_FILES=$(__parse_args delete_files ${@})
 
-    for _SITE in ${_SITES[@]}; do
-        _DOMAIN=$(basename ${_SITE} .conf | sed "s/${_USERNAME}_//g")
-        _site_delete "--username=${_USERNAME}" "--domain=${_DOMAIN}" "--delete_files=yes"
+    while [[ -z "$_DELETE_FILES" ]]; do
+        echo -e "Do you want to delete user files?"
+
+        select _ITEM in ${_OPTIONS_YES_NO[@]}; do
+            _DELETE_FILES=$_ITEM
+            break
+        done
     done
+
+    local _SITES=$(__get_user_sites $_USERNAME)
+
+    if [ -n "$_SITES" ]; then
+        for _DOMAIN in ${_SITES[@]}; do
+            _site_delete "--username=${_USERNAME}" "--domain=${_DOMAIN}" "--delete_files=${_DELETE_FILES}" "--restart_service=no"
+        done
+
+        sudo nginx -t && sudo systemctl reload nginx
+    fi
 
     for _PHP_VERSION in ${_PHP_VERSIONS[@]}; do
         _php_pool_delete "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
         _php_fastcgi_delete "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
+
         sudo service "php${_PHP_VERSION}-fpm" restart
     done
 
     __print_header "Deleting existing user"
 
-    userdel -r "$_USERNAME"
+    if [ "${_DELETE_FILES}" = "yes" ]; then
+        userdel -r "$_USERNAME"
+    else
+        userdel "$_USERNAME"
+    fi
 
     echo -e "User $_USERNAME has been deleted from system!"
 
@@ -353,11 +382,30 @@ _php_fastcgi_delete() {
 _site_add() {
     __print_header "Adding new site"
 
+    local _USERS=$(__get_existing_users)
+
+    if [ -z "$_USERS" ]; then
+        echo "No users available. Please add new using 'user_add' command!"
+        exit 1
+    fi
+
     local _USERNAME=$(__parse_args username ${@})
 
     while [[ -z "$_USERNAME" ]]; do
-        read -p "Enter system user as the site owner: [$USER] " _USERNAME
-        _USERNAME=${_USERNAME:-$USER}
+        if [ $(id -u) -eq 0 ]; then
+            echo -e "Select site owner user: "
+        else
+            echo -e "Select site owner user: [$USER] "
+        fi
+
+        select _ITEM in ${_USERS[@]}; do
+            if [ $(id -u) -ne 0 ]; then
+                _USERNAME=${_ITEM:-$USER}
+            else
+                _USERNAME=${_ITEM}
+            fi
+            break
+        done
     done
 
     egrep "^$_USERNAME" /etc/passwd >/dev/null
@@ -513,11 +561,22 @@ _site_add() {
 _site_delete() {
     __print_header "Deleting existing site"
 
+    local _USERS=$(__get_existing_users)
+
+    if [ -z "$_USERS" ]; then
+        echo "No users available. Please add new using the 'user_add' command!"
+        exit 1
+    fi
+
     local _USERNAME=$(__parse_args username ${@})
 
     while [[ -z "$_USERNAME" ]]; do
-        read -p "Enter system user as the site owner: [$USER] " _USERNAME
-        _USERNAME=${_USERNAME:-$USER}
+        echo -e "Select site owner: "
+
+        select _ITEM in ${_USERS[@]}; do
+            _USERNAME=${_ITEM}
+            break
+        done
     done
 
     egrep "^$_USERNAME" /etc/passwd >/dev/null
@@ -527,10 +586,28 @@ _site_delete() {
         exit 1
     fi
 
+    local _SITES=$(__get_user_sites $_USERNAME)
+
+    if [ -z "$_SITES" ]; then
+        echo "No sites available for selected user. Please add new using the 'site_add' command!"
+        exit 1
+    fi
+
     local _DOMAIN=$(__parse_args domain ${@})
 
     while [[ -z "$_DOMAIN" ]]; do
-        read -p "Enter domain: " _DOMAIN
+        local _SITES=$(__get_user_sites $_USERNAME)
+
+        if [ -n "$_SITES" ]; then
+            echo -e "Domain to delete: "
+
+            select _ITEM in ${_SITES[@]}; do
+                _DOMAIN=${_ITEM}
+                break
+            done
+        else
+            read -p "Domain to delete: " _DOMAIN
+        fi
     done
 
     local _DELETE_FILES=$(__parse_args delete_files ${@})
@@ -548,17 +625,26 @@ _site_delete() {
         esac
     fi
 
+    local _RESTART_SERVICE=$(__parse_args restart_service ${@})
+
     local _CONF_SITE_ENABLED="/etc/nginx/sites-enabled/${_USERNAME}_${_DOMAIN}.conf"
 
     if [ -f "${_CONF_SITE_ENABLED}" ]; then
         sudo rm -rf "${_CONF_SITE_ENABLED}"
-        sudo nginx -t && sudo systemctl reload nginx
+
+        if [ "$_RESTART_SERVICE" != "no" ]; then
+            sudo nginx -t && sudo systemctl reload nginx
+        fi
     fi
 
     local _CONF_SITE_AVAILABLE="/etc/nginx/sites-available/${_USERNAME}_${_DOMAIN}.conf"
 
     if [ -f "${_CONF_SITE_AVAILABLE}" ]; then
         sudo rm -rf "${_CONF_SITE_AVAILABLE}"
+
+        if [ "$_RESTART_SERVICE" != "no" ]; then
+            sudo nginx -t && sudo systemctl reload nginx
+        fi
     fi
 
     if [ "$_DELETE_FILES"="yes" ]; then
@@ -756,7 +842,7 @@ __check_os() {
 __parse_args() {
     local _MATCH=""
 
-    for _ARGUMENT in "${@:2}"; do
+    for _ARGUMENT in ${@:2}; do
         local _KEY=$(echo $_ARGUMENT | cut -f1 -d=)
         local _VALUE=$(echo $_ARGUMENT | cut -f2 -d=)
 
@@ -1077,8 +1163,62 @@ __purge_yarn() {
     __print_divider
 }
 
+__is_sudoer() {
+    if [ $(id -u) -eq 0 ]; then
+        echo 0
+        exit 0
+    fi
+
+    local _SUDOERS=$(__get_sudoers)
+
+    if [ -n "${_SUDOERS}" ]; then
+        for _SUDOER in ${_SUDOERS[@]}; do
+            if [ "$_SUDOER" = "$USER" ]; then
+                echo 0
+                exit 0
+            fi
+        done
+    fi
+
+    echo 1
+    exit 1
+}
+
+__is_valid_user() {
+    local _USERS=$(__get_existing_users)
+
+    if [ -n "${_USERS}" ]; then
+        for _USER in ${_USERS[@]}; do
+            if [ "$_USER" == "$1" ]; then
+                echo 0
+                exit 0
+            fi
+        done
+    fi
+
+    echo 1
+    exit 1
+}
+
+__get_sudoers() {
+    echo $(grep '^sudo:.*$' /etc/group | cut -d: -f4)
+}
+
+__get_existing_users() {
+    echo $(awk -F ':' '$3>=1000 && $3<=60000 {print $1}' /etc/passwd)
+}
+
+__get_user_sites() {
+    echo $(find /etc/nginx/sites-available/ -type f -name "${1}_*" -exec basename {} .conf \; | sed "s/${1}_//g")
+}
+
 # Execute the main command
 __main() {
+    if [ $(__is_sudoer) -ne 0 ]; then
+        echo "Only root and sudoer users allowed to execute this script!"
+        exit 1
+    fi
+
     _CALLBACK=$(echo ${1} | sed 's/^_\+\(.*\)$/\1/')
 
     while [[ -z "$_CALLBACK" ]]; do
