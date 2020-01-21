@@ -347,8 +347,11 @@ _php_pool_add() {
 
     if [ -f "./template/php_pool.conf" ]; then
         sudo cp "./template/php_pool.conf" "${_CONF_FILE}"
+    elif [ -f "/tmp/lemper_template_php_pool.conf" ]; then
+        sudo cp "/tmp/lemper_template_php_pool.conf" "${_CONF_FILE}"
     else
-        sudo wget -O "${_CONF_FILE}" "${_REPO_BASE_URL}/template/php_pool.conf"
+        sudo wget -O "/tmp/lemper_template_php_pool.conf" "${_REPO_BASE_URL}/template/php_pool.conf"
+        sudo cp "/tmp/lemper_template_php_pool.conf" "${_CONF_FILE}"
     fi
 
     sed -i -e "s#{{USERNAME}}#${_USERNAME}#g" "${_CONF_FILE}"
@@ -465,8 +468,11 @@ _php_fastcgi_add() {
 
     if [ -f "./template/php_fastcgi.conf" ]; then
         sudo cp -p "./template/php_fastcgi.conf" "${_CONF_FILE}"
+    elif [ -f "/tmp/lemper_template_php_fastcgi.conf" ]; then
+        sudo cp "/tmp/lemper_template_php_fastcgi.conf" "${_CONF_FILE}"
     else
-        sudo wget -O "${_CONF_FILE}" "${_REPO_BASE_URL}/template/php_fastcgi.conf"
+        sudo wget -O "/tmp/lemper_template_php_fastcgi.conf" "${_REPO_BASE_URL}/template/php_fastcgi.conf"
+        sudo cp "/tmp/lemper_template_php_fastcgi.conf" "${_CONF_FILE}"
     fi
 
     sed -i -e "s#{{SOCK_FILE}}#${_SOCK_FILE}#g" "${_CONF_FILE}"
@@ -641,8 +647,11 @@ _site_add() {
 
     if [ -f "./template/preset/${_SITE_PRESET}.conf" ]; then
         sudo cp "./template/preset/${_SITE_PRESET}.conf" "${_CONF_SITE_AVAILABLE}"
+    elif [ -f "/tmp/lemper_template_preset_${_SITE_PRESET}.conf" ]; then
+        sudo cp "/tmp/lemper_template_preset_${_SITE_PRESET}.conf" "${_CONF_SITE_AVAILABLE}"
     else
-        sudo wget -O "${_CONF_SITE_AVAILABLE}" "${_REPO_BASE_URL}/template/preset/${_SITE_PRESET}.conf"
+        sudo wget -O "/tmp/lemper_template_preset_${_SITE_PRESET}.conf" "${_REPO_BASE_URL}/template/preset/${_SITE_PRESET}.conf"
+        sudo cp "/tmp/lemper_template_preset_${_SITE_PRESET}.conf" "${_CONF_SITE_AVAILABLE}"
     fi
 
     sed -i -e "s/{{USERNAME}}/${_USERNAME}/g" "${_CONF_SITE_AVAILABLE}"
@@ -1065,11 +1074,19 @@ __install_nginx() {
     fi
 
     for _CONF_FILE in ${_CONF_FILES[@]}; do
+        local _CONF_FILE_FULL="/etc/nginx/${_CONF_FILE}"
+        local _CONF_FILE_TMP=$(echo ${_CONF_FILE} | sed "s#/#_#g")
+
         if [ -f "./nginx/$_CONF_FILE" ]; then
-            sudo cp "./nginx/$_CONF_FILE" "/etc/nginx/${_CONF_FILE}"
+            sudo cp "./nginx/$_CONF_FILE" "${_CONF_FILE_FULL}"
+        elif [ -f "/tmp/lemper_nginx_${_CONF_FILE_TMP}" ]; then
+            sudo cp "/tmp/lemper_nginx_${_CONF_FILE_TMP}" "${_CONF_FILE_FULL}"
         else
-            sudo wget -O "/etc/nginx/${_CONF_FILE}" "${_REPO_BASE_URL}/nginx/$_CONF_FILE"
+            sudo wget -O "/tmp/lemper_nginx_${_CONF_FILE_TMP}" "${_REPO_BASE_URL}/nginx/$_CONF_FILE"
+            sudo cp "/tmp/lemper_nginx_${_CONF_FILE_TMP}" "${_CONF_FILE_FULL}"
         fi
+
+        echo -e "Configuration file created: $_CONF_FILE_FULL"
     done
 
     __print_divider
