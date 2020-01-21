@@ -8,14 +8,13 @@ _PHP_VERSIONS=(5.6 7.0 7.1 7.2 7.3 7.4)
 _PHP_EXTENSIONS=(cli fpm gd mysql curl zip xdebug)
 _SITE_PRESETS=(php wordpress)
 _OPTIONS_YES_NO=(yes no)
-_OPTIONS_NO_YES=(no yes)
 
 _DB_NAME=""
 _DB_USER=""
 _DB_PASSWORD=""
 _DB_HOST=""
 
-_install() {
+_lemper_install() {
     __print_header "Starting the install procedure"
     __print_divider
 
@@ -36,7 +35,7 @@ _install() {
     __cleaning_up ${@}
 }
 
-_purge() {
+_lemper_purge() {
     __print_header "Starting the purge procedure"
     __print_divider
 
@@ -107,8 +106,6 @@ _user_add() {
         echo
     done
 
-    local _CRYPTED_PASS=$(perl -e 'print crypt($ARGV[0], "password")' $_PASSWORD)
-
     local _SUDO=$(__parse_args sudo ${@})
 
     while [[ -z "$_SUDO" ]]; do
@@ -120,7 +117,9 @@ _user_add() {
         done
     done
 
-    useradd -m -p $_CRYPTED_PASS $_USERNAME >/dev/null
+    local _CRYPTED_PASS=$(perl -e 'print crypt($ARGV[0], "password")' $_PASSWORD)
+
+    useradd -m -s /bin/bash -p $_CRYPTED_PASS $_USERNAME >/dev/null
 
     if [ $? -ne 0 ]; then
         echo -e "Failed to add a user!"
@@ -131,7 +130,7 @@ _user_add() {
         sudo usermod -aG sudo ${_USERNAME}
     fi
 
-    echo -e "User $_USERNAME has been added to system!"
+    echo -e "User $_USERNAME has been added!"
 
     __print_divider
 
@@ -212,6 +211,94 @@ _user_delete() {
     echo -e "User $_USERNAME has been deleted from system!"
 
     __print_divider
+}
+
+_user_update() {
+    __print_header "Update existing user"
+
+    local _USERS=$(__get_existing_users)
+
+    if [ -z "$_USERS" ]; then
+        echo "No users available. Please add new using the 'user_add' command!"
+        exit 1
+    fi
+
+    local _USERNAME=$(__parse_args username ${@})
+
+    while [[ -z "$_USERNAME" ]]; do
+        echo -e "Select user to update: "
+
+        select _ITEM in ${_USERS[@]}; do
+            _USERNAME=$_ITEM
+            break
+        done
+    done
+
+    local _CHANGE_PASSWORD=$(__parse_args change_password ${@})
+
+    while [[ -z "$_CHANGE_PASSWORD" ]]; do
+        echo -e "Do you want to change user password? "
+
+        select _ITEM in ${_OPTIONS_YES_NO[@]}; do
+            _CHANGE_PASSWORD=$_ITEM
+            break
+        done
+    done
+
+    local _PASSWORD=$(__parse_args password ${@})
+
+    if [ "${_CHANGE_PASSWORD}" = "yes" ]; then
+        while [[ -z "$_PASSWORD" ]]; do
+            echo -n "Enter new password: "
+            stty -echo
+
+            #read password
+            local _CHARCOUNT=0
+            local _PROMPT=''
+
+            while IFS= read -p "$_PROMPT" -r -s -n 1 ch; do
+                # Enter - accept password
+                if [[ $ch == $'\0' ]]; then
+                    break
+                fi
+
+                # Backspace
+                if [[ $ch == $'\177' ]]; then
+                    if [ $_CHARCOUNT -gt 0 ]; then
+                        _CHARCOUNT=$((_CHARCOUNT - 1))
+                        _PROMPT=$'\b \b'
+                        _PASSWORD="${_PASSWORD%?}"
+                    else
+                        _PROMPT=''
+                    fi
+                else
+                    _CHARCOUNT=$((_CHARCOUNT + 1))
+                    _PROMPT='*'
+                    _PASSWORD+="$ch"
+                fi
+            done
+
+            stty echo
+
+            echo
+        done
+    fi
+
+    if [ "${_CHANGE_PASSWORD}" = "yes" ]; then
+        local _CRYPTED_PASS=$(perl -e 'print crypt($ARGV[0], "password")' $_PASSWORD)
+
+        usermod -p $_CRYPTED_PASS $_USERNAME >/dev/null
+    fi
+
+    echo -e "User $_USERNAME has been updated!"
+
+    __print_divider
+
+    for _PHP_VERSION in ${_PHP_VERSIONS[@]}; do
+        _php_pool_add "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
+        _php_fastcgi_add "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
+        sudo service "php${_PHP_VERSION}-fpm" restart
+    done
 }
 
 _php_pool_add() {
@@ -547,19 +634,6 @@ _site_add() {
             _ADMIN_EMAIL=${_ADMIN_EMAIL:-"info@${_DOMAIN}"}
         done
     fi
-
-    echo "_USERNAME=$_USERNAME"
-    echo "_DOMAIN=$_DOMAIN"
-    echo "_EXTRA_DOMAINS=$_EXTRA_DOMAINS"
-    echo "_PHP_VERSION=$_PHP_VERSION"
-    echo "_SITE_PRESET=$_SITE_PRESET"
-    echo "_CREATE_DATABASE=$_CREATE_DATABASE"
-    echo "_DB_NAME=$_DB_NAME"
-    echo "_DB_USER=$_DB_USER"
-    echo "_DB_PASSWORD=$_DB_PASSWORD"
-    echo "_DB_HOST=$_DB_HOST"
-    echo "_ENABLE_SSL=$_ENABLE_SSL"
-    echo "_ADMIN_EMAIL=$_ADMIN_EMAIL"
 
     # start creating site procedure
     local _CONF_SITE_AVAILABLE="/etc/nginx/sites-available/${_USERNAME}_${_DOMAIN}.conf"
