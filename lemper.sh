@@ -156,8 +156,8 @@ _user_add() {
     __print_divider
 
     for _PHP_VERSION in ${_PHP_VERSIONS[@]}; do
-        _generate_php_pool "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
-        _generate_php_fastcgi "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
+        _php_pool_generate "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
+        _php_fastcgi_generate "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
         sudo service "php${_PHP_VERSION}-fpm" restart
     done
 }
@@ -386,11 +386,11 @@ _user_update() {
     if [ "$_REGENERATE_PHP_POOL" = "yes" ] || [ "$_REGENERATE_PHP_FASTCGI" = "yes" ]; then
         for _PHP_VERSION in ${_PHP_VERSIONS[@]}; do
             if [ "$_REGENERATE_PHP_POOL" = "yes" ]; then
-                _generate_php_pool "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
+                _php_pool_generate "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
             fi
 
             if [ "$_REGENERATE_PHP_FASTCGI" = "yes" ]; then
-                _generate_php_fastcgi "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
+                _php_fastcgi_generate "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
             fi
 
             sudo service "php${_PHP_VERSION}-fpm" restart
@@ -402,7 +402,7 @@ _user_update() {
     __print_divider
 }
 
-_generate_php_pool() {
+_php_pool_generate() {
     __print_header "Generating PHP-FPM pool file"
 
     local _USERS=$(__get_existing_users)
@@ -523,7 +523,7 @@ _php_pool_delete() {
     __print_divider
 }
 
-_generate_php_fastcgi() {
+_php_fastcgi_generate() {
     __print_header "Generating PHP-FastCGI configuration file"
 
     local _USERS=$(__get_existing_users)
