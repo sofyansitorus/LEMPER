@@ -133,11 +133,31 @@ _user_add() {
 
     echo -e "User $_USERNAME has been added!"
 
+    local _USER_DATA_DIR="/etc/nginx/lemper.io/data/users"
+    local _USER_DATA_FILE="${_USER_DATA_DIR}/${_USERNAME}"
+
+    if [ ! -d "${_USER_DATA_DIR}" ]; then
+        sudo mkdir -p "${_USER_DATA_DIR}"
+    fi
+
+    if [ -f "./nginx/lemper.io/templates/data/users.conf" ]; then
+        sudo cp "./nginx/lemper.io/templates/data/users.conf" "${_USER_DATA_FILE}"
+    elif [ -f "/etc/nginx/lemper.io/templates/data/users.conf" ]; then
+        sudo cp "/etc/nginx/lemper.io/templates/data/users.conf" "${_USER_DATA_FILE}"
+    else
+        sudo wget -O "/etc/nginx/lemper.io/templates/data/users.conf" "${_REPO_BASE_URL}/nginx/lemper.io/templates/data/users.conf"
+        sudo cp "/etc/nginx/lemper.io/templates/data/users.conf" "${_USER_DATA_FILE}"
+    fi
+
+    sed -i -e "s/{{USERNAME}}/${_USERNAME}/g" "${_USER_DATA_FILE}"
+    sed -i -e "s/{{PASSWORD}}/${_CRYPTED_PASS}/g" "${_USER_DATA_FILE}"
+    sed -i -e "s/{{SUDO}}/${_SUDO}/g" "${_USER_DATA_FILE}"
+
     __print_divider
 
     for _PHP_VERSION in ${_PHP_VERSIONS[@]}; do
-        _php_pool_add "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
-        _php_fastcgi_add "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
+        _generate_php_pool "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
+        _generate_php_fastcgi "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
         sudo service "php${_PHP_VERSION}-fpm" restart
     done
 }
@@ -207,6 +227,13 @@ _user_delete() {
         userdel -r "$_USERNAME"
     else
         userdel "$_USERNAME"
+    fi
+
+    local _USER_DATA_DIR="/etc/nginx/lemper.io/data/users"
+    local _USER_DATA_FILE="${_USER_DATA_DIR}/${_USERNAME}"
+
+    if [ -f "${_USER_DATA_FILE}" ]; then
+        sudo rm -rf "${_USER_DATA_FILE}"
     fi
 
     echo -e "User $_USERNAME has been deleted from system!"
@@ -285,25 +312,98 @@ _user_update() {
         done
     fi
 
+    local _CHANGE_SUDO=$(__parse_args change_sudo ${@})
+
+    while [[ -z "$_CHANGE_SUDO" ]]; do
+        echo -e "Do you want to change user sudo group? "
+
+        select _ITEM in ${_OPTIONS_YES_NO[@]}; do
+            _CHANGE_SUDO=$_ITEM
+            break
+        done
+    done
+
+    local _SUDO=$(__parse_args sudo ${@})
+
+    if [ "${_CHANGE_SUDO}" = "yes" ]; then
+        while [[ -z "$_SUDO" ]]; do
+            echo -e "Do you want to add user to sudo group? "
+
+            select _ITEM in ${_OPTIONS_YES_NO[@]}; do
+                _SUDO=$_ITEM
+                break
+            done
+        done
+    fi
+
+    local _REGENERATE_PHP_POOL=$(__parse_args regenerate_php_pool ${@})
+
+    while [[ -z "$_REGENERATE_PHP_POOL" ]]; do
+        echo -e "Do you want to re-generate PHP Pool? "
+
+        select _ITEM in ${_OPTIONS_YES_NO[@]}; do
+            _REGENERATE_PHP_POOL=$_ITEM
+            break
+        done
+    done
+
+    local _REGENERATE_PHP_FASTCGI=$(__parse_args regenerate_php_fastcgi ${@})
+
+    while [[ -z "$_REGENERATE_PHP_FASTCGI" ]]; do
+        echo -e "Do you want to re-generate PHP FastCGI? "
+
+        select _ITEM in ${_OPTIONS_YES_NO[@]}; do
+            _REGENERATE_PHP_FASTCGI=$_ITEM
+            break
+        done
+    done
+
+    local _USER_DATA_DIR="/etc/nginx/lemper.io/data/users"
+    local _USER_DATA_FILE="${_USER_DATA_DIR}/${_USERNAME}"
+
     if [ "${_CHANGE_PASSWORD}" = "yes" ]; then
         local _CRYPTED_PASS=$(perl -e 'print crypt($ARGV[0], "password")' $_PASSWORD)
 
         usermod -p $_CRYPTED_PASS $_USERNAME >/dev/null
+
+        if [ -f "${_USER_DATA_FILE}" ]; then
+            sed -i -e "s/password\=.*/password\=${_CRYPTED_PASS}/" "${_USER_DATA_FILE}"
+        fi
+    fi
+
+    if [ "${_CHANGE_SUDO}" = "yes" ]; then
+        if [ "${_SUDO}" = "yes" ]; then
+            sudo usermod -aG sudo ${_USERNAME}
+        else
+            sudo deluser ${_USERNAME} sudo
+        fi
+
+        if [ -f "${_USER_DATA_FILE}" ]; then
+            sed -i -e "s/sudo\=.*/sudo\=${_SUDO}/" "${_USER_DATA_FILE}"
+        fi
+    fi
+
+    if [ "$_REGENERATE_PHP_POOL" = "yes" ] || [ "$_REGENERATE_PHP_FASTCGI" = "yes" ]; then
+        for _PHP_VERSION in ${_PHP_VERSIONS[@]}; do
+            if [ "$_REGENERATE_PHP_POOL" = "yes" ]; then
+                _generate_php_pool "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
+            fi
+
+            if [ "$_REGENERATE_PHP_FASTCGI" = "yes" ]; then
+                _generate_php_fastcgi "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
+            fi
+
+            sudo service "php${_PHP_VERSION}-fpm" restart
+        done
     fi
 
     echo -e "User $_USERNAME has been updated!"
 
     __print_divider
-
-    for _PHP_VERSION in ${_PHP_VERSIONS[@]}; do
-        _php_pool_add "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
-        _php_fastcgi_add "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
-        sudo service "php${_PHP_VERSION}-fpm" restart
-    done
 }
 
-_php_pool_add() {
-    __print_header "Adding PHP-FPM pool"
+_generate_php_pool() {
+    __print_header "Generating PHP-FPM pool file"
 
     local _USERS=$(__get_existing_users)
 
@@ -423,8 +523,8 @@ _php_pool_delete() {
     __print_divider
 }
 
-_php_fastcgi_add() {
-    __print_header "Adding PHP-FastCGI configuration file"
+_generate_php_fastcgi() {
+    __print_header "Generating PHP-FastCGI configuration file"
 
     local _USERS=$(__get_existing_users)
 
@@ -1402,7 +1502,7 @@ __purge_yarn() {
     __print_divider
 }
 
-__is_sudoer() {
+__is_sudo_user() {
     if [ $(id -u) -eq 0 ]; then
         echo 0
         exit 0
@@ -1444,7 +1544,7 @@ __get_sudoers() {
 }
 
 __get_existing_users() {
-    echo $(awk -F ':' '$3>=1000 && $3<=60000 {print $1}' /etc/passwd)
+    echo $(find "/etc/nginx/lemper.io/data/users" -type f -exec basename {} \;)
 }
 
 __get_existing_sites() {
@@ -1453,7 +1553,7 @@ __get_existing_sites() {
 
 # Execute the main command
 __main() {
-    if [ $(__is_sudoer) -ne 0 ]; then
+    if [ $(__is_sudo_user) -ne 0 ]; then
         echo "Only root and sudoer users allowed to execute this script!"
         exit 1
     fi
