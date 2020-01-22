@@ -468,7 +468,7 @@ _php_pool_generate() {
 }
 
 _php_pool_delete() {
-    __print_header "Deleting PHP-FPM pool"
+    __print_header "Deleting PHP-FPM pool file"
 
     local _USERS=$(__get_existing_users)
 
