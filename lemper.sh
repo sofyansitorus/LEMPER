@@ -664,40 +664,62 @@ _site_add() {
 
     sudo nginx -t && sudo systemctl reload nginx
 
-    local _WWW_ROOT="/home/${_USERNAME}/www"
-    local _SITE_ROOT="${_WWW_ROOT}/${_DOMAIN}"
-    local _LETSENCRYPT_ROOT="${_SITE_ROOT}/.letsencrypt"
+    local _WWW_ROOT_DIR="/home/${_USERNAME}/www"
+    local _SITE_ROOT_DIR="${_WWW_ROOT_DIR}/${_DOMAIN}"
+    local _SITE_PUBLIC_DIR="${_SITE_ROOT_DIR}/public"
+    local _SITE_LETSENCRYPT_DIR="${_SITE_ROOT_DIR}/.letsencrypt"
 
-    sudo mkdir -p "${_SITE_ROOT}/public"
-
-    if [ -f "./nginx/lemper.io/templates/lemper.io.html" ]; then
-        sudo cp "./nginx/lemper.io/templates/lemper.io.html" "${_SITE_ROOT}/public/lemper.io.html"
-    elif [ -f "/etc/nginx/lemper.io/templates/lemper.io.html" ]; then
-        sudo cp "/etc/nginx/lemper.io/templates/lemper.io.html" "${_SITE_ROOT}/public/lemper.io.html"
-    else
-        sudo wget -O "/etc/nginx/lemper.io/templates/lemper.io.html" "${_REPO_BASE_URL}/nginx/lemper.io/templates/lemper.io.html"
-        sudo cp "/etc/nginx/lemper.io/templates/lemper.io.html" "${_SITE_ROOT}/public/lemper.io.html"
+    if [ ! -d "${_WWW_ROOT_DIR}" ]; then
+        sudo mkdir -p "${_WWW_ROOT_DIR}"
+        sudo chown -R "${_USERNAME}:${_USERNAME}" "${_WWW_ROOT_DIR}"
     fi
 
-    sudo chown -R "${_USERNAME}:${_USERNAME}" "${_WWW_ROOT}"
+    if [ ! -d "${_SITE_ROOT_DIR}" ]; then
+        sudo mkdir -p "${_SITE_ROOT_DIR}"
+        sudo chown -R "${_USERNAME}:${_USERNAME}" "${_SITE_ROOT_DIR}"
+    fi
 
-    if [ "$_ENABLE_SSL" = "yes" ]; then
-        sudo mkdir -p "${_LETSENCRYPT_ROOT}"
-        sudo chown -R "${_USERNAME}:${_USERNAME}" "${_LETSENCRYPT_ROOT}"
+    if [ ! -d "${_SITE_PUBLIC_DIR}" ]; then
+        sudo mkdir -p "${_SITE_PUBLIC_DIR}"
+        sudo chown -R "${_USERNAME}:${_USERNAME}" "${_SITE_PUBLIC_DIR}"
+    fi
 
-        sudo openssl dhparam -out /etc/nginx/dhparam.pem 2048
-        sudo nginx -t && sudo systemctl reload nginx
-
-        sudo certbot certonly --webroot -d ${_DOMAIN} --email ${_ADMIN_EMAIL} -w ${_LETSENCRYPT_ROOT} -n --agree-tos --force-renewal
-        sed -i -r 's/#?;#//g' "${_CONF_SITE_AVAILABLE}"
-        sudo nginx -t && sudo systemctl reload nginx
-
-        if [ ! -f /etc/letsencrypt/renewal-hooks/post/nginx-reload.sh ]; then
-            echo -e '#!/bin/bash\nnginx -t && systemctl reload nginx' | sudo tee /etc/letsencrypt/renewal-hooks/post/nginx-reload.sh
+    if [ -d "${_SITE_PUBLIC_DIR}" ]; then
+        if [ -f "./nginx/lemper.io/templates/lemper.io.html" ]; then
+            sudo cp "./nginx/lemper.io/templates/lemper.io.html" "${_SITE_PUBLIC_DIR}/lemper.io.html"
+        elif [ -f "/etc/nginx/lemper.io/templates/lemper.io.html" ]; then
+            sudo cp "/etc/nginx/lemper.io/templates/lemper.io.html" "${_SITE_PUBLIC_DIR}/lemper.io.html"
+        else
+            sudo wget -O "/etc/nginx/lemper.io/templates/lemper.io.html" "${_REPO_BASE_URL}/nginx/lemper.io/templates/lemper.io.html"
+            sudo cp "/etc/nginx/lemper.io/templates/lemper.io.html" "${_SITE_PUBLIC_DIR}/lemper.io.html"
         fi
 
-        if [ -f /etc/letsencrypt/renewal-hooks/post/nginx-reload.sh ]; then
-            sudo chmod a+x /etc/letsencrypt/renewal-hooks/post/nginx-reload.sh
+        if [ -f "${_SITE_PUBLIC_DIR}/lemper.io.html" ]; then
+            sed -i -e "s/{{DOMAIN}}/${_DOMAIN}/g" "${_SITE_PUBLIC_DIR}/lemper.io.html"
+            sudo chown -R "${_USERNAME}:${_USERNAME}" "${_SITE_PUBLIC_DIR}/lemper.io.html"
+        fi
+    fi
+
+    if [ "$_ENABLE_SSL" = "yes" ]; then
+        sudo mkdir -p "${_SITE_LETSENCRYPT_DIR}"
+
+        if [ -d "${_SITE_LETSENCRYPT_DIR}" ]; then
+            sudo chown -R "${_USERNAME}:${_USERNAME}" "${_SITE_LETSENCRYPT_DIR}"
+
+            sudo openssl dhparam -out /etc/nginx/dhparam.pem 2048
+            sudo nginx -t && sudo systemctl reload nginx
+
+            sudo certbot certonly --webroot -d ${_DOMAIN} --email ${_ADMIN_EMAIL} -w ${_SITE_LETSENCRYPT_DIR} -n --agree-tos --force-renewal
+            sed -i -r 's/#?;#//g' "${_CONF_SITE_AVAILABLE}"
+            sudo nginx -t && sudo systemctl reload nginx
+
+            if [ ! -f /etc/letsencrypt/renewal-hooks/post/nginx-reload.sh ]; then
+                echo -e '#!/bin/bash\nnginx -t && systemctl reload nginx' | sudo tee /etc/letsencrypt/renewal-hooks/post/nginx-reload.sh
+            fi
+
+            if [ -f /etc/letsencrypt/renewal-hooks/post/nginx-reload.sh ]; then
+                sudo chmod a+x /etc/letsencrypt/renewal-hooks/post/nginx-reload.sh
+            fi
         fi
     fi
 
@@ -782,10 +804,10 @@ _site_delete() {
     fi
 
     if [ "$_DELETE_FILES"="yes" ]; then
-        local _SITE_ROOT="/home/${_USERNAME}/www/${_DOMAIN}"
+        local _SITE_ROOT_DIR="/home/${_USERNAME}/www/${_DOMAIN}"
 
-        if [ -d "${_SITE_ROOT}" ]; then
-            sudo rm -rf "${_SITE_ROOT}"
+        if [ -d "${_SITE_ROOT_DIR}" ]; then
+            sudo rm -rf "${_SITE_ROOT_DIR}"
         fi
     fi
 
@@ -1393,6 +1415,24 @@ __main() {
     if [ $(__is_sudoer) -ne 0 ]; then
         echo "Only root and sudoer users allowed to execute this script!"
         exit 1
+    fi
+
+    if [ ! -d "/etc/nginx/lemper.io" ]; then
+        echo "It is appear that you did not install the LEMPER.IO yet. Would you like to install it now ?"
+
+        local _INSTALL_NOW=""
+
+        select _ITEM in ${_OPTIONS_YES_NO[@]}; do
+            _INSTALL_NOW=$_ITEM
+            break
+        done
+
+        if [ "${_INSTALL_NOW}" != "yes" ]; then
+            echo "Goodbye!"
+            exit 1
+        fi
+
+        _lemper_install ${@:2}
     fi
 
     _CALLBACK=$(echo ${1} | sed 's/^_\+\(.*\)$/\1/')
