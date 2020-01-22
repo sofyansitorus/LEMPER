@@ -184,7 +184,7 @@ _user_delete() {
         done
     done
 
-    local _SITES=$(__get_user_sites $_USERNAME)
+    local _SITES=$(__get_existing_sites $_USERNAME)
 
     if [ -n "$_SITES" ]; then
         for _DOMAIN in ${_SITES[@]}; do
@@ -723,6 +723,30 @@ _site_add() {
         fi
     fi
 
+    local _SITE_DATA_DIR="/etc/nginx/lemper.io/data/sites/${_USERNAME}"
+    local _SITE_DATA_FILE="${_SITE_DATA_DIR}/${_DOMAIN}"
+
+    if [ ! -d "${_SITE_DATA_DIR}" ]; then
+        sudo mkdir -p "${_SITE_DATA_DIR}"
+    fi
+
+    if [ -f "./nginx/lemper.io/templates/data/sites.conf" ]; then
+        sudo cp "./nginx/lemper.io/templates/data/sites.conf" "${_SITE_DATA_FILE}"
+    elif [ -f "/etc/nginx/lemper.io/templates/data/sites.conf" ]; then
+        sudo cp "/etc/nginx/lemper.io/templates/data/sites.conf" "${_SITE_DATA_FILE}"
+    else
+        sudo wget -O "/etc/nginx/lemper.io/templates/data/sites.conf" "${_REPO_BASE_URL}/nginx/lemper.io/templates/data/sites.conf"
+        sudo cp "/etc/nginx/lemper.io/templates/data/sites.conf" "${_SITE_DATA_FILE}"
+    fi
+
+    sed -i -e "s/{{USERNAME}}/${_USERNAME}/g" "${_SITE_DATA_FILE}"
+    sed -i -e "s/{{DOMAIN}}/${_DOMAIN}/g" "${_SITE_DATA_FILE}"
+    sed -i -e "s/{{EXTRA_DOMAINS}}/${_EXTRA_DOMAINS}/g" "${_SITE_DATA_FILE}"
+    sed -i -e "s/{{PHP_VERSION}}/${_PHP_VERSION}/g" "${_SITE_DATA_FILE}"
+    sed -i -e "s/{{SITE_PRESET}}/${_SITE_PRESET}/g" "${_SITE_DATA_FILE}"
+    sed -i -e "s/{{CREATE_DATABASE}}/${_CREATE_DATABASE}/g" "${_SITE_DATA_FILE}"
+    sed -i -e "s/{{ENABLE_SSL}}/${_ENABLE_SSL}/g" "${_SITE_DATA_FILE}"
+
     __print_divider
 }
 
@@ -752,7 +776,7 @@ _site_delete() {
         exit 1
     fi
 
-    local _SITES=$(__get_user_sites $_USERNAME)
+    local _SITES=$(__get_existing_sites $_USERNAME)
 
     if [ -z "$_SITES" ]; then
         echo "No sites available for selected user. Please add new using the 'site_add' command!"
@@ -801,6 +825,23 @@ _site_delete() {
         if [ "$_RESTART_SERVICE" != "no" ]; then
             sudo nginx -t && sudo systemctl reload nginx
         fi
+    fi
+
+    local _CONF_SITE_AVAILABLE="/etc/nginx/sites-available/${_USERNAME}_${_DOMAIN}.conf"
+
+    if [ -f "${_CONF_SITE_AVAILABLE}" ]; then
+        sudo rm -rf "${_CONF_SITE_AVAILABLE}"
+
+        if [ "$_RESTART_SERVICE" != "no" ]; then
+            sudo nginx -t && sudo systemctl reload nginx
+        fi
+    fi
+
+    local _SITE_DATA_DIR="/etc/nginx/lemper.io/data/sites/${_USERNAME}"
+    local _SITE_DATA_FILE="${_SITE_DATA_DIR}/${_DOMAIN}"
+
+    if [ -f "${_SITE_DATA_FILE}" ]; then
+        sudo rm -rf "${_SITE_DATA_FILE}"
     fi
 
     if [ "$_DELETE_FILES"="yes" ]; then
@@ -1406,8 +1447,8 @@ __get_existing_users() {
     echo $(awk -F ':' '$3>=1000 && $3<=60000 {print $1}' /etc/passwd)
 }
 
-__get_user_sites() {
-    echo $(find /etc/nginx/sites-available/ -type f -name "${1}_*" -exec basename {} .conf \; | sed "s/${1}_//g")
+__get_existing_sites() {
+    echo $(find "/etc/nginx/lemper.io/data/sites/${1}" -type f -exec basename {} \;)
 }
 
 # Execute the main command
