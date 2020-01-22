@@ -1164,9 +1164,14 @@ __parse_args() {
 }
 
 __print_header() {
-    __print_divider "+"
+    local _CHAR=$2
+    if [ -z "$_CHAR" ]; then
+        _CHAR="+"
+    fi
+
+    __print_divider "${_CHAR}"
     echo -e ">>> $1"
-    __print_divider "+"
+    __print_divider "${_CHAR}"
 }
 
 __print_divider() {
@@ -1234,22 +1239,20 @@ __install_nginx() {
 
     echo ""
 
-    local _DIRS=(backup includes presets templates sites)
+    local _BACKUP_FILE=nginx.conf_$(date +'%F_%H-%M-%S')
+    local _BACKUP_DIR_DEST="/etc/nginx/lemper.io/backup"
+    local _BACKUP_FILE_DEST="${_BACKUP_DIR_DEST}/${_BACKUP_FILE}"
 
-    for _DIR in ${_DIRS[@]}; do
-        if [ ! -d "/etc/nginx/lemper.io/${_DIR}" ]; then
-            echo -e "Creating lemper.io directory: /etc/nginx/lemper.io/${_DIR}"
-            sudo mkdir -p "/etc/nginx/lemper.io/${_DIR}"
-        fi
-    done
+    if [ ! -d "${_BACKUP_DIR_DEST}" ]; then
+        echo -e "Creating backup directory: ${_BACKUP_DIR_DEST}"
+        sudo mkdir -p "${_BACKUP_DIR_DEST}"
+    fi
 
-    echo ""
+    echo -e "Creating backup for existing configuration file: /etc/nginx/nginx.conf >>> ${_BACKUP_FILE_DEST}"
 
-    echo -e "Creating backup for existing configuration file: /etc/nginx/nginx.conf"
+    sudo cp /etc/nginx/nginx.conf ${_BACKUP_FILE_DEST}
 
-    sudo cp /etc/nginx/nginx.conf /etc/nginx/lemper.io/backup/nginx.conf_$(date +'%F_%H-%M-%S')
-
-    echo -e "Creating configuration file : /etc/nginx/nginx.conf"
+    echo -e "Overriding configuration file : /etc/nginx/nginx.conf"
 
     if [ -f "./nginx/nginx.conf" ]; then
         sudo cp "./nginx/nginx.conf" "/etc/nginx/nginx.conf"
@@ -1262,7 +1265,13 @@ __install_nginx() {
     local _INCLUDE_FILES=(general.conf security.conf wordpress.conf)
 
     for _INCLUDE_FILE in ${_INCLUDE_FILES[@]}; do
-        local _INCLUDE_FILE_DEST="/etc/nginx/lemper.io/includes/${_INCLUDE_FILE}"
+        local _INCLUDE_DIR_DEST="/etc/nginx/lemper.io/includes"
+        local _INCLUDE_FILE_DEST="${_INCLUDE_DIR_DEST}/${_INCLUDE_FILE}"
+
+        if [ ! -d "${_INCLUDE_DIR_DEST}" ]; then
+            echo -e "Creating include directory: ${_INCLUDE_DIR_DEST}"
+            sudo mkdir -p "${_INCLUDE_DIR_DEST}"
+        fi
 
         echo -e "Creating include file : ${_INCLUDE_FILE_DEST}"
 
@@ -1278,7 +1287,13 @@ __install_nginx() {
     local _PRESET_FILES=(php.conf wordpress.conf)
 
     for _PRESET_FILE in ${_PRESET_FILES[@]}; do
-        local _PRESET_FILE_DEST="/etc/nginx/lemper.io/presets/${_PRESET_FILE}"
+        local _PRESET_DIR_DEST="/etc/nginx/lemper.io/presets"
+        local _PRESET_FILE_DEST="${_PRESET_DIR_DEST}/${_PRESET_FILE}"
+
+        if [ ! -d "${_PRESET_DIR_DEST}" ]; then
+            echo -e "Creating preset directory: ${_PRESET_DIR_DEST}"
+            sudo mkdir -p "${_PRESET_DIR_DEST}"
+        fi
 
         echo -e "Creating preset file : ${_PRESET_FILE_DEST}"
 
@@ -1294,7 +1309,13 @@ __install_nginx() {
     local _TEMPLATE_FILES=(php_fastcgi.conf php_pool.conf lemper.io.html)
 
     for _TEMPLATE_FILE in ${_TEMPLATE_FILES[@]}; do
-        local _TEMPLATE_FILE_DEST="/etc/nginx/lemper.io/templates/${_TEMPLATE_FILE}"
+        local _TEMPLATE_DIR_DEST="/etc/nginx/lemper.io/templates"
+        local _TEMPLATE_FILE_DEST="${_TEMPLATE_DIR_DEST}/${_TEMPLATE_FILE}"
+
+        if [ ! -d "${_TEMPLATE_DIR_DEST}" ]; then
+            echo -e "Creating template directory: ${_TEMPLATE_DIR_DEST}"
+            sudo mkdir -p "${_TEMPLATE_DIR_DEST}"
+        fi
 
         echo -e "Creating template file : ${_TEMPLATE_FILE_DEST}"
 
@@ -1305,6 +1326,30 @@ __install_nginx() {
         fi
     done
 
+    local _DATA_FILES=(sites.conf users.conf)
+
+    for _DATA_FILE in ${_DATA_FILES[@]}; do
+        local _TEMPLATE_DIR_DEST="/etc/nginx/lemper.io/templates/data"
+        local _DATA_FILE_DEST="${_TEMPLATE_DIR_DEST}/${_DATA_FILE}"
+
+        if [ ! -d "${_TEMPLATE_DIR_DEST}" ]; then
+            echo -e "Creating template directory: ${_TEMPLATE_DIR_DEST}"
+            sudo mkdir -p "${_TEMPLATE_DIR_DEST}"
+        fi
+
+        echo -e "Creating template file : ${_DATA_FILE_DEST}"
+
+        if [ -f "./nginx/lemper.io/templates/data/$_DATA_FILE" ]; then
+            sudo cp "./nginx/lemper.io/templates/data/$_DATA_FILE" "${_DATA_FILE_DEST}"
+        else
+            sudo wget -O "${_DATA_FILE_DEST}" "${_REPO_BASE_URL}/nginx/lemper.io/templates/data/$_DATA_FILE"
+        fi
+    done
+
+    __print_divider
+
+    nginx -v
+
     __print_divider
 }
 
@@ -1312,6 +1357,10 @@ __install_certbot() {
     __print_header "Installing Certbot"
 
     sudo apt-get -y --no-upgrade install certbot
+
+    __print_divider
+
+    certbot --version
 
     __print_divider
 }
@@ -1367,18 +1416,27 @@ __install_mariadb() {
     sudo apt-get -y install --no-upgrade mariadb-server
 
     __print_divider
+
+    mysql --version
+
+    __print_divider
 }
 
 __install_php() {
     for _PHP_VERSION in ${_PHP_VERSIONS[@]}; do
+        __print_header "Installing PHP version: ${_PHP_VERSION}"
 
         for _PHP_EXTENSION in ${_PHP_EXTENSIONS[@]}; do
-            __print_header "Installing PHP extension: php${_PHP_VERSION}-${_PHP_EXTENSION}"
+            __print_header "Installing PHP extension: php${_PHP_VERSION}-${_PHP_EXTENSION}" "-"
 
             sudo apt-get -y --no-upgrade install "php${_PHP_VERSION}-${_PHP_EXTENSION}"
-
-            __print_divider
         done
+
+        __print_divider
+
+        /usr/bin/php${_PHP_VERSION} --version
+
+        __print_divider
     done
 }
 
@@ -1386,6 +1444,10 @@ __install_composer() {
     __print_header "Installing Composer"
 
     sudo apt-get -y --no-upgrade install composer
+
+    __print_divider
+
+    which composer
 
     __print_divider
 }
@@ -1397,9 +1459,13 @@ __install_wp_cli() {
         curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
         chmod +x wp-cli.phar
         sudo mv wp-cli.phar /usr/local/bin/wp
+    else
+        wp --info --allow-root
     fi
 
-    wp --info --allow-root
+    __print_divider
+
+    wp --version --allow-root
 
     __print_divider
 }
@@ -1412,6 +1478,10 @@ __install_nodejs() {
     fi
 
     sudo apt-get -y --no-upgrade install nodejs
+
+    __print_divider
+
+    nodejs --version
 
     __print_divider
 }
@@ -1430,6 +1500,10 @@ __install_yarn() {
     fi
 
     sudo apt-get -y --no-upgrade install yarn
+
+    __print_divider
+
+    yarn --version
 
     __print_divider
 }
