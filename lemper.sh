@@ -719,7 +719,7 @@ _site_add() {
     done
 
     if [ "$_CREATE_DATABASE" = "yes" ]; then
-        _database_add "--username=${_USERNAME}" ${@}
+        _database_create "--username=${_USERNAME}" ${@}
     fi
 
     local _ENABLE_SSL=$(__parse_args enable_ssl ${@})
@@ -957,7 +957,7 @@ _site_delete() {
     __print_divider
 }
 
-_database_add() {
+_database_create() {
     local _USERNAME=$(__parse_args username ${@})
 
     while [[ -z "$_USERNAME" ]]; do
@@ -1434,7 +1434,7 @@ __install_php() {
 
         __print_divider
 
-        /usr/bin/php${_PHP_VERSION} --version
+        eval $(which php${_PHP_VERSION}) --version
 
         __print_divider
     done
@@ -1459,13 +1459,11 @@ __install_wp_cli() {
         curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
         chmod +x wp-cli.phar
         sudo mv wp-cli.phar /usr/local/bin/wp
-    else
-        wp --info --allow-root
+
+        __print_divider
     fi
 
-    __print_divider
-
-    wp --version --allow-root
+    wp --info --allow-root
 
     __print_divider
 }
