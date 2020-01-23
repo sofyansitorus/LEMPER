@@ -1,11 +1,9 @@
 #!/bin/bash
 
 _REPO_BASE_URL="https://raw.githubusercontent.com/sofyansitorus/LEMPER/master"
-_CWD=$(pwd)
-_APT_REPOSITORIES=(universe ppa:ondrej/php ppa:certbot/certbot)
 _COMMON_PACKAGES=(software-properties-common dialog apt-utils gcc g++ make curl wget git zip unzip openssl perl)
 _PHP_VERSIONS=(5.6 7.0 7.1 7.2 7.3 7.4)
-_PHP_EXTENSIONS=(fpm cli gd mysql curl zip xdebug)
+_PHP_EXTENSIONS=(cli gd mysql curl zip xdebug)
 _SITE_PRESETS=(php wordpress)
 _OPTIONS_YES_NO=(yes no)
 
@@ -19,12 +17,10 @@ _lemper_install() {
 
     __check_os ${@}
 
-    __add_ppa ${@}
-
     __install_common ${@}
     __install_nginx ${@}
     __install_certbot ${@}
-    __install_mysql ${@}
+    __install_mariadb ${@}
     __install_php ${@}
     __install_composer ${@}
     __install_wp_cli ${@}
@@ -45,7 +41,7 @@ _lemper_purge() {
     __purge_wp_cli ${@}
     __purge_composer ${@}
     __purge_php ${@}
-    __purge_mysql ${@}
+    __purge_mariadb ${@}
     __purge_nginx ${@}
 
     __cleaning_up ${@}
@@ -1289,28 +1285,12 @@ __cleaning_up() {
     __print_divider
 }
 
-__add_ppa() {
-    for _APT_REPOSITORIY in ${_APT_REPOSITORIES[@]}; do
-        __print_header "Adding PPA $_APT_REPOSITORIY"
-
-        sudo add-apt-repository -y $_APT_REPOSITORIY
-    done
-
-    sudo apt-get -y update
-
-    __print_divider
-}
-
 __install_common() {
     __print_header "Installing common packages"
 
-    local _INSTALL_PACKAGES=""
-
     for _COMMON_PACKAGE in ${_COMMON_PACKAGES[@]}; do
-        _INSTALL_PACKAGES+=" ${_COMMON_PACKAGE}"
+        sudo apt-get -y --no-upgrade install ${_COMMON_PACKAGE}
     done
-
-    sudo apt-get -y --no-upgrade install ${_INSTALL_PACKAGES}
 
     __print_divider
 }
@@ -1441,6 +1421,12 @@ __install_nginx() {
 __install_certbot() {
     __print_header "Installing Certbot"
 
+    sudo apt-get -y install software-properties-common
+
+    sudo add-apt-repository -y universe
+    sudo add-apt-repository -y ppa:certbot/certbot
+
+    sudo apt-get -y --no-upgrade update
     sudo apt-get -y --no-upgrade install certbot
 
     __print_divider
@@ -1450,7 +1436,7 @@ __install_certbot() {
     __print_divider
 }
 
-__install_mysql() {
+__install_mariadb() {
     __print_header "Installing MySQL server"
 
     if ! which mysql >/dev/null 2>&1; then
@@ -1458,14 +1444,15 @@ __install_mysql() {
 
         while [[ -z "$_MYSQL_ROOT_PASSWORD" ]]; do
             echo -n "Enter MySQL Root Password:"
+
             stty -echo
 
-            #read password
+            #read
             local _CHARCOUNT=0
             local _PROMPT=''
 
             while IFS= read -p "$_PROMPT" -r -s -n 1 ch; do
-                # Enter - accept password
+                # Enter - accept
                 if [[ $ch == $'\0' ]]; then
                     break
                 fi
@@ -1493,12 +1480,16 @@ __install_mysql() {
 
         export DEBIAN_FRONTEND=noninteractive
 
-        echo "mysql-server-5.7 mysql-server/root_password password $_MYSQL_ROOT_PASSWORD" | sudo debconf-set-selections
-        echo "mysql-server-5.7 mysql-server/root_password_again password $_MYSQL_ROOT_PASSWORD" | sudo debconf-set-selections
+        echo "mariadb-server mysql-server/root_password password $_MYSQL_ROOT_PASSWORD" | sudo debconf-set-selections
+        echo "mariadb-server mysql-server/root_password_again password $_MYSQL_ROOT_PASSWORD" | sudo debconf-set-selections
 
-        sudo apt-get -y --no-upgrade install mysql-server-5.7 mysql-client
+        sudo apt-get -y --no-upgrade install mariadb-server
 
-        mysql -u root "-p${_MYSQL_ROOT_PASSWORD}" -e "use mysql; UPDATE user SET authentication_string=PASSWORD('$_MYSQL_ROOT_PASSWORD') WHERE User='root'; flush privileges;"
+        local _SQL_USE="use mysql;"
+        local _SQL_UPDATE_USER="UPDATE user SET authentication_string=PASSWORD('$_MYSQL_ROOT_PASSWORD'), plugin='' WHERE user='root';"
+        local _SQL_FLUSH="FLUSH PRIVILEGES;"
+
+        mysql -u root "-p${_MYSQL_ROOT_PASSWORD}" -e "${_SQL_USE}${_SQL_UPDATE_USER}${_SQL_FLUSH}"
     fi
 
     __print_divider
@@ -1509,20 +1500,23 @@ __install_mysql() {
 }
 
 __install_php() {
+    __print_header "Installing PHP"
+
+    sudo apt-get -y --no-upgrade install software-properties-common
+    sudo add-apt-repository -y ppa:ondrej/php
+    sudo add-apt-repository -y ppa:ondrej/nginx
+    sudo apt-get -y update
+
     for _PHP_VERSION in ${_PHP_VERSIONS[@]}; do
         __print_header "Installing PHP version: ${_PHP_VERSION}"
 
-        __print_divider
+        sudo apt-get -y --no-upgrade install "php${_PHP_VERSION}-fpm"
 
         for _PHP_EXTENSION in ${_PHP_EXTENSIONS[@]}; do
             __print_header "Installing PHP extension: php${_PHP_VERSION}-${_PHP_EXTENSION}" "-"
 
             sudo apt-get -y --no-upgrade install "php${_PHP_VERSION}-${_PHP_EXTENSION}"
         done
-
-        __print_divider
-
-        eval $(which php${_PHP_VERSION}) --version
 
         __print_divider
     done
@@ -1600,6 +1594,7 @@ __purge_nginx() {
     sudo apt-get -y purge nginx*
 
     sudo rm -rf /etc/nginx/lemper.io
+    sudo rm -rf /var/run/lemper.io
 
     __print_divider
 }
@@ -1612,12 +1607,12 @@ __purge_apache() {
     __print_divider
 }
 
-__purge_mysql() {
+__purge_mariadb() {
     __print_header "Purging MySQL"
 
-    sudo apt-get -y purge mysql*
+    sudo apt-get -y purge mariadb*
 
-    sudo rm -rf /etc/mysql
+    sudo rm -rf /etc/mariadb
 
     __print_divider
 }
@@ -1625,7 +1620,13 @@ __purge_mysql() {
 __purge_php() {
     __print_header "Purging PHP"
 
-    sudo apt-get -y --purge remove php-common
+    for _PHP_VERSION in ${_PHP_VERSIONS[@]}; do
+        sudo service "php${_PHP_VERSION}-fpm" stop
+
+        sudo apt-get -y --purge remove "php${_PHP_VERSION}-fpm"
+
+        sudo rm -rf "/etc/php/${_PHP_VERSION}"
+    done
 
     __print_divider
 }
@@ -1720,23 +1721,23 @@ __main() {
         exit 1
     fi
 
-    # if [ ! -d "/etc/nginx/lemper.io" ]; then
-    #     echo "It is appear that you did not install the LEMPER.IO yet. Would you like to install it now ?"
+    if [ ! -d "/etc/nginx/lemper.io" ]; then
+        echo "It is appear that you did not install the LEMPER.IO yet. Would you like to install it now ?"
 
-    #     local _INSTALL_NOW=""
+        local _INSTALL_NOW=""
 
-    #     select _ITEM in ${_OPTIONS_YES_NO[@]}; do
-    #         _INSTALL_NOW=$_ITEM
-    #         break
-    #     done
+        select _ITEM in ${_OPTIONS_YES_NO[@]}; do
+            _INSTALL_NOW=$_ITEM
+            break
+        done
 
-    #     if [ "${_INSTALL_NOW}" != "yes" ]; then
-    #         echo "Goodbye!"
-    #         exit 1
-    #     fi
+        if [ "${_INSTALL_NOW}" != "yes" ]; then
+            echo "Goodbye!"
+            exit 1
+        fi
 
-    #     _lemper_install ${@:2}
-    # fi
+        _lemper_install ${@:2}
+    fi
 
     _CALLBACK=$(echo ${1} | sed 's/^_\+\(.*\)$/\1/')
 
