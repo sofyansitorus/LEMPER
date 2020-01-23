@@ -5,28 +5,26 @@ _CWD=$(pwd)
 _APT_REPOSITORIES=(universe ppa:ondrej/php ppa:certbot/certbot)
 _COMMON_PACKAGES=(software-properties-common dialog apt-utils gcc g++ make curl wget git zip unzip openssl perl)
 _PHP_VERSIONS=(5.6 7.0 7.1 7.2 7.3 7.4)
-_PHP_EXTENSIONS=(cli fpm gd mysql curl zip xdebug)
+_PHP_EXTENSIONS=(fpm cli gd mysql curl zip xdebug)
 _SITE_PRESETS=(php wordpress)
 _OPTIONS_YES_NO=(yes no)
 
 _DB_NAME=""
 _DB_USER=""
 _DB_PASSWORD=""
-_DB_HOST=""
 
 _lemper_install() {
     __print_header "Starting the install procedure"
     __print_divider
 
     __check_os ${@}
-    __purge_apache
 
     __add_ppa ${@}
 
     __install_common ${@}
     __install_nginx ${@}
     __install_certbot ${@}
-    __install_mariadb ${@}
+    __install_mysql ${@}
     __install_php ${@}
     __install_composer ${@}
     __install_wp_cli ${@}
@@ -47,7 +45,7 @@ _lemper_purge() {
     __purge_wp_cli ${@}
     __purge_composer ${@}
     __purge_php ${@}
-    __purge_mariadb ${@}
+    __purge_mysql ${@}
     __purge_nginx ${@}
 
     __cleaning_up ${@}
@@ -133,25 +131,25 @@ _user_add() {
 
     echo -e "User $_USERNAME has been added!"
 
-    local _USER_DATA_DIR="/etc/nginx/lemper.io/data/users"
-    local _USER_DATA_FILE="${_USER_DATA_DIR}/${_USERNAME}"
+    local _USER_CONF_DIR="/etc/nginx/lemper.io/conf/users"
+    local _USER_CONF_FILE="${_USER_CONF_DIR}/${_USERNAME}"
 
-    if [ ! -d "${_USER_DATA_DIR}" ]; then
-        sudo mkdir -p "${_USER_DATA_DIR}"
+    if [ ! -d "${_USER_CONF_DIR}" ]; then
+        sudo mkdir -p "${_USER_CONF_DIR}"
     fi
 
-    if [ -f "./nginx/lemper.io/templates/data/users.conf" ]; then
-        sudo cp "./nginx/lemper.io/templates/data/users.conf" "${_USER_DATA_FILE}"
-    elif [ -f "/etc/nginx/lemper.io/templates/data/users.conf" ]; then
-        sudo cp "/etc/nginx/lemper.io/templates/data/users.conf" "${_USER_DATA_FILE}"
+    if [ -f "./nginx/lemper.io/templates/conf/users.conf" ]; then
+        sudo cp "./nginx/lemper.io/templates/conf/users.conf" "${_USER_CONF_FILE}"
+    elif [ -f "/etc/nginx/lemper.io/templates/conf/users.conf" ]; then
+        sudo cp "/etc/nginx/lemper.io/templates/conf/users.conf" "${_USER_CONF_FILE}"
     else
-        sudo wget -O "/etc/nginx/lemper.io/templates/data/users.conf" "${_REPO_BASE_URL}/nginx/lemper.io/templates/data/users.conf"
-        sudo cp "/etc/nginx/lemper.io/templates/data/users.conf" "${_USER_DATA_FILE}"
+        sudo wget -O "/etc/nginx/lemper.io/templates/conf/users.conf" "${_REPO_BASE_URL}/nginx/lemper.io/templates/conf/users.conf"
+        sudo cp "/etc/nginx/lemper.io/templates/conf/users.conf" "${_USER_CONF_FILE}"
     fi
 
-    sed -i -e "s/{{USERNAME}}/${_USERNAME}/g" "${_USER_DATA_FILE}"
-    sed -i -e "s/{{PASSWORD}}/${_CRYPTED_PASS}/g" "${_USER_DATA_FILE}"
-    sed -i -e "s/{{SUDO}}/${_SUDO}/g" "${_USER_DATA_FILE}"
+    sed -i -e "s/{{USERNAME}}/${_USERNAME}/g" "${_USER_CONF_FILE}"
+    sed -i -e "s/{{PASSWORD}}/${_CRYPTED_PASS}/g" "${_USER_CONF_FILE}"
+    sed -i -e "s/{{SUDO}}/${_SUDO}/g" "${_USER_CONF_FILE}"
 
     __print_divider
 
@@ -229,11 +227,11 @@ _user_delete() {
         userdel "$_USERNAME"
     fi
 
-    local _USER_DATA_DIR="/etc/nginx/lemper.io/data/users"
-    local _USER_DATA_FILE="${_USER_DATA_DIR}/${_USERNAME}"
+    local _USER_CONF_DIR="/etc/nginx/lemper.io/conf/users"
+    local _USER_CONF_FILE="${_USER_CONF_DIR}/${_USERNAME}"
 
-    if [ -f "${_USER_DATA_FILE}" ]; then
-        sudo rm -rf "${_USER_DATA_FILE}"
+    if [ -f "${_USER_CONF_FILE}" ]; then
+        sudo rm -rf "${_USER_CONF_FILE}"
     fi
 
     echo -e "User $_USERNAME has been deleted from system!"
@@ -358,16 +356,16 @@ _user_update() {
         done
     done
 
-    local _USER_DATA_DIR="/etc/nginx/lemper.io/data/users"
-    local _USER_DATA_FILE="${_USER_DATA_DIR}/${_USERNAME}"
+    local _USER_CONF_DIR="/etc/nginx/lemper.io/conf/users"
+    local _USER_CONF_FILE="${_USER_CONF_DIR}/${_USERNAME}"
 
     if [ "${_CHANGE_PASSWORD}" = "yes" ]; then
         local _CRYPTED_PASS=$(perl -e 'print crypt($ARGV[0], "password")' $_PASSWORD)
 
         usermod -p $_CRYPTED_PASS $_USERNAME >/dev/null
 
-        if [ -f "${_USER_DATA_FILE}" ]; then
-            sed -i -e "s/password\=.*/password\=${_CRYPTED_PASS}/" "${_USER_DATA_FILE}"
+        if [ -f "${_USER_CONF_FILE}" ]; then
+            sed -i -e "s/password\=.*/password\=${_CRYPTED_PASS}/" "${_USER_CONF_FILE}"
         fi
     fi
 
@@ -378,8 +376,8 @@ _user_update() {
             sudo deluser ${_USERNAME} sudo
         fi
 
-        if [ -f "${_USER_DATA_FILE}" ]; then
-            sed -i -e "s/sudo\=.*/sudo\=${_SUDO}/" "${_USER_DATA_FILE}"
+        if [ -f "${_USER_CONF_FILE}" ]; then
+            sed -i -e "s/sudo\=.*/sudo\=${_SUDO}/" "${_USER_CONF_FILE}"
         fi
     fi
 
@@ -823,29 +821,29 @@ _site_add() {
         fi
     fi
 
-    local _SITE_DATA_DIR="/etc/nginx/lemper.io/data/sites/${_USERNAME}"
-    local _SITE_DATA_FILE="${_SITE_DATA_DIR}/${_DOMAIN}"
+    local _SITE_CONF_DIR="/etc/nginx/lemper.io/conf/sites/${_USERNAME}"
+    local _SITE_CONF_FILE="${_SITE_CONF_DIR}/${_DOMAIN}"
 
-    if [ ! -d "${_SITE_DATA_DIR}" ]; then
-        sudo mkdir -p "${_SITE_DATA_DIR}"
+    if [ ! -d "${_SITE_CONF_DIR}" ]; then
+        sudo mkdir -p "${_SITE_CONF_DIR}"
     fi
 
-    if [ -f "./nginx/lemper.io/templates/data/sites.conf" ]; then
-        sudo cp "./nginx/lemper.io/templates/data/sites.conf" "${_SITE_DATA_FILE}"
-    elif [ -f "/etc/nginx/lemper.io/templates/data/sites.conf" ]; then
-        sudo cp "/etc/nginx/lemper.io/templates/data/sites.conf" "${_SITE_DATA_FILE}"
+    if [ -f "./nginx/lemper.io/templates/conf/sites.conf" ]; then
+        sudo cp "./nginx/lemper.io/templates/conf/sites.conf" "${_SITE_CONF_FILE}"
+    elif [ -f "/etc/nginx/lemper.io/templates/conf/sites.conf" ]; then
+        sudo cp "/etc/nginx/lemper.io/templates/conf/sites.conf" "${_SITE_CONF_FILE}"
     else
-        sudo wget -O "/etc/nginx/lemper.io/templates/data/sites.conf" "${_REPO_BASE_URL}/nginx/lemper.io/templates/data/sites.conf"
-        sudo cp "/etc/nginx/lemper.io/templates/data/sites.conf" "${_SITE_DATA_FILE}"
+        sudo wget -O "/etc/nginx/lemper.io/templates/conf/sites.conf" "${_REPO_BASE_URL}/nginx/lemper.io/templates/conf/sites.conf"
+        sudo cp "/etc/nginx/lemper.io/templates/conf/sites.conf" "${_SITE_CONF_FILE}"
     fi
 
-    sed -i -e "s/{{USERNAME}}/${_USERNAME}/g" "${_SITE_DATA_FILE}"
-    sed -i -e "s/{{DOMAIN}}/${_DOMAIN}/g" "${_SITE_DATA_FILE}"
-    sed -i -e "s/{{EXTRA_DOMAINS}}/${_EXTRA_DOMAINS}/g" "${_SITE_DATA_FILE}"
-    sed -i -e "s/{{PHP_VERSION}}/${_PHP_VERSION}/g" "${_SITE_DATA_FILE}"
-    sed -i -e "s/{{SITE_PRESET}}/${_SITE_PRESET}/g" "${_SITE_DATA_FILE}"
-    sed -i -e "s/{{CREATE_DATABASE}}/${_CREATE_DATABASE}/g" "${_SITE_DATA_FILE}"
-    sed -i -e "s/{{ENABLE_SSL}}/${_ENABLE_SSL}/g" "${_SITE_DATA_FILE}"
+    sed -i -e "s/{{USERNAME}}/${_USERNAME}/g" "${_SITE_CONF_FILE}"
+    sed -i -e "s/{{DOMAIN}}/${_DOMAIN}/g" "${_SITE_CONF_FILE}"
+    sed -i -e "s/{{EXTRA_DOMAINS}}/${_EXTRA_DOMAINS}/g" "${_SITE_CONF_FILE}"
+    sed -i -e "s/{{PHP_VERSION}}/${_PHP_VERSION}/g" "${_SITE_CONF_FILE}"
+    sed -i -e "s/{{SITE_PRESET}}/${_SITE_PRESET}/g" "${_SITE_CONF_FILE}"
+    sed -i -e "s/{{CREATE_DATABASE}}/${_CREATE_DATABASE}/g" "${_SITE_CONF_FILE}"
+    sed -i -e "s/{{ENABLE_SSL}}/${_ENABLE_SSL}/g" "${_SITE_CONF_FILE}"
 
     __print_divider
 }
@@ -937,11 +935,11 @@ _site_delete() {
         fi
     fi
 
-    local _SITE_DATA_DIR="/etc/nginx/lemper.io/data/sites/${_USERNAME}"
-    local _SITE_DATA_FILE="${_SITE_DATA_DIR}/${_DOMAIN}"
+    local _SITE_CONF_DIR="/etc/nginx/lemper.io/conf/sites/${_USERNAME}"
+    local _SITE_CONF_FILE="${_SITE_CONF_DIR}/${_DOMAIN}"
 
-    if [ -f "${_SITE_DATA_FILE}" ]; then
-        sudo rm -rf "${_SITE_DATA_FILE}"
+    if [ -f "${_SITE_CONF_FILE}" ]; then
+        sudo rm -rf "${_SITE_CONF_FILE}"
     fi
 
     if [ "$_DELETE_FILES"="yes" ]; then
@@ -958,31 +956,108 @@ _site_delete() {
 }
 
 _database_create() {
+    __print_header "Creating database"
+
+    local _USERS=$(__get_existing_users)
+
+    if [ -z "$_USERS" ]; then
+        echo "No users available. Please add new using the 'user_add' command!"
+        exit 1
+    fi
+
     local _USERNAME=$(__parse_args username ${@})
 
     while [[ -z "$_USERNAME" ]]; do
-        read -p "Enter system user that will be used as database prefix: [$USER] " _USERNAME
-        _USERNAME=${_USERNAME:-$USER}
+        echo -e "Select user: "
+
+        select _ITEM in ${_USERS[@]}; do
+            _USERNAME=$_ITEM
+            break
+        done
     done
 
-    egrep "^$_USERNAME" /etc/passwd >/dev/null
-
-    if [ $? -ne 0 ]; then
-        echo "User $_USERNAME not exists!"
+    if [ $(__is_valid_user "$_USERNAME") -ne 0 ]; then
+        echo "User $_USERNAME is invalid!"
         exit 1
     fi
 
     _DB_NAME=$(__parse_args db_name ${@})
 
     while [[ -z "$_DB_NAME" ]]; do
-        read -p "Enter MySQL database name: " _DB_NAME
+        echo -n "Enter MySQL database name: "
+        stty -echo
+
+        #read
+        local _CHARCOUNT=0
+        local _PROMPT="${_USERNAME}_"
+
+        while IFS= read -p "$_PROMPT" -r -s -n 1 ch; do
+            # Enter - accept
+            if [[ $ch == $'\0' ]]; then
+                break
+            fi
+
+            # Backspace
+            if [[ $ch == $'\177' ]]; then
+                if [ $_CHARCOUNT -gt 0 ]; then
+                    _CHARCOUNT=$((_CHARCOUNT - 1))
+                    _PROMPT=$'\b \b'
+                    _DB_NAME="${_DB_NAME%?}"
+                else
+                    _PROMPT=''
+                fi
+            else
+                _CHARCOUNT=$((_CHARCOUNT + 1))
+                _PROMPT="$ch"
+                _DB_NAME+="$ch"
+            fi
+        done
+
+        stty echo
+
+        echo
     done
+
+    _DB_NAME="${_USERNAME}_${_DB_NAME}"
 
     _DB_USER=$(__parse_args db_user ${@})
 
     while [[ -z "$_DB_USER" ]]; do
-        read -p "Enter MySQL database username: " _DB_USER
+        echo -n "Enter MySQL database username: "
+        stty -echo
+
+        #read
+        local _CHARCOUNT=0
+        local _PROMPT="${_USERNAME}_"
+
+        while IFS= read -p "$_PROMPT" -r -s -n 1 ch; do
+            # Enter - accept
+            if [[ $ch == $'\0' ]]; then
+                break
+            fi
+
+            # Backspace
+            if [[ $ch == $'\177' ]]; then
+                if [ $_CHARCOUNT -gt 0 ]; then
+                    _CHARCOUNT=$((_CHARCOUNT - 1))
+                    _PROMPT=$'\b \b'
+                    _DB_USER="${_DB_USER%?}"
+                else
+                    _PROMPT=''
+                fi
+            else
+                _CHARCOUNT=$((_CHARCOUNT + 1))
+                _PROMPT="$ch"
+                _DB_USER+="$ch"
+            fi
+        done
+
+        stty echo
+
+        echo
     done
+
+    _DB_USER="${_USERNAME}_${_DB_USER}"
 
     _DB_PASSWORD=$(__parse_args db_password ${@})
 
@@ -990,12 +1065,12 @@ _database_create() {
         echo -n "Enter MySQL database password: "
         stty -echo
 
-        #read password
+        #read
         local _CHARCOUNT=0
         local _PROMPT=''
 
         while IFS= read -p "$_PROMPT" -r -s -n 1 ch; do
-            # Enter - accept password
+            # Enter - accept
             if [[ $ch == $'\0' ]]; then
                 break
             fi
@@ -1021,25 +1096,18 @@ _database_create() {
         echo
     done
 
-    _DB_HOST=$(__parse_args db_host ${@})
-
-    while [[ -z "$_DB_HOST" ]]; do
-        read -p "Enter MySQL hostname: [%]" _DB_HOST
-        _DB_HOST=${_DB_HOST:-"%"}
-    done
-
     local _MYSQL_ROOT_PASSWORD=$(__parse_args mysql_root_password ${@})
 
     while [[ -z "$_MYSQL_ROOT_PASSWORD" ]]; do
         echo -n "Enter MySQL Root Password: [root]"
         stty -echo
 
-        #read password
+        #read
         local _CHARCOUNT=0
         local _PROMPT=''
 
         while IFS= read -p "$_PROMPT" -r -s -n 1 ch; do
-            # Enter - accept password
+            # Enter - accept
             if [[ $ch == $'\0' ]]; then
                 break
             fi
@@ -1067,12 +1135,41 @@ _database_create() {
         _MYSQL_ROOT_PASSWORD=${_MYSQL_ROOT_PASSWORD:-"root"}
     done
 
-    local _SQL_CREATE_DATABASE="CREATE DATABASE IF NOT EXISTS ${_USERNAME}_${_DB_NAME};"
-    local _SQL_CREATE_USER="CREATE USER IF NOT EXISTS '${_USERNAME}_${_DB_USER}'@'${_DB_HOST}' IDENTIFIED BY '${_DB_PASSWORD}';"
-    local _SQL_GRANT="GRANT ALL PRIVILEGES ON ${_USERNAME}_${_DB_NAME}.* TO '${_USERNAME}_${_DB_USER}'@'${_DB_HOST}';"
+    local _SQL_CREATE_DATABASE="CREATE DATABASE ${_DB_NAME};"
+    local _SQL_CREATE_USER="CREATE USER '${_DB_USER}'@'%' IDENTIFIED BY '${_DB_PASSWORD}';"
+    local _SQL_GRANT="GRANT ALL PRIVILEGES ON ${_DB_NAME}.* TO '${_DB_USER}'@'%';"
     local _SQL_FLUSH="FLUSH PRIVILEGES;"
 
-    mysql -u root -p${_MYSQL_ROOT_PASSWORD} -e "${_SQL_CREATE_DATABASE}${_SQL_CREATE_USER}${_SQL_GRANT}${_SQL_FLUSH}"
+    echo $_SQL_CREATE_DATABASE
+    echo $_SQL_CREATE_USER
+    echo $_SQL_GRANT
+    echo $_SQL_FLUSH
+
+    # mysql -u root -p${_MYSQL_ROOT_PASSWORD} -e "${_SQL_CREATE_DATABASE}${_SQL_CREATE_USER}${_SQL_GRANT}${_SQL_FLUSH}"
+
+    local _DATABASE_CONF_DIR="/etc/nginx/lemper.io/conf/databases/${_USERNAME}"
+    local _DATABASE_CONF_FILE="${_DATABASE_CONF_DIR}/${_DOMAIN}"
+
+    if [ ! -d "${_DATABASE_CONF_DIR}" ]; then
+        sudo mkdir -p "${_DATABASE_CONF_DIR}"
+    fi
+
+    if [ -f "./nginx/lemper.io/templates/conf/databases.conf" ]; then
+        sudo cp "./nginx/lemper.io/templates/conf/databases.conf" "${_DATABASE_CONF_FILE}"
+    elif [ -f "/etc/nginx/lemper.io/templates/conf/databases.conf" ]; then
+        sudo cp "/etc/nginx/lemper.io/templates/conf/databases.conf" "${_DATABASE_CONF_FILE}"
+    else
+        sudo wget -O "/etc/nginx/lemper.io/templates/conf/databases.conf" "${_REPO_BASE_URL}/nginx/lemper.io/templates/conf/databases.conf"
+        sudo cp "/etc/nginx/lemper.io/templates/conf/databases.conf" "${_DATABASE_CONF_FILE}"
+    fi
+
+    sed -i -e "s/{{USERNAME}}/${_USERNAME}/g" "${_DATABASE_CONF_FILE}"
+    sed -i -e "s/{{DOMAIN}}/${_DOMAIN}/g" "${_DATABASE_CONF_FILE}"
+    sed -i -e "s/{{EXTRA_DOMAINS}}/${_EXTRA_DOMAINS}/g" "${_DATABASE_CONF_FILE}"
+    sed -i -e "s/{{PHP_VERSION}}/${_PHP_VERSION}/g" "${_DATABASE_CONF_FILE}"
+    sed -i -e "s/{{SITE_PRESET}}/${_SITE_PRESET}/g" "${_DATABASE_CONF_FILE}"
+    sed -i -e "s/{{CREATE_DATABASE}}/${_CREATE_DATABASE}/g" "${_DATABASE_CONF_FILE}"
+    sed -i -e "s/{{ENABLE_SSL}}/${_ENABLE_SSL}/g" "${_DATABASE_CONF_FILE}"
 }
 
 __php_pool_conf_file() {
@@ -1193,29 +1290,15 @@ __cleaning_up() {
 }
 
 __add_ppa() {
-    local _NEED_UPDATE=0
-
     for _APT_REPOSITORIY in ${_APT_REPOSITORIES[@]}; do
-        grep -h "^deb.*$_APT_REPOSITORIY" /etc/apt/sources.list.d/* >/dev/null 2>&1
+        __print_header "Adding PPA $_APT_REPOSITORIY"
 
-        if [ $? -ne 0 ]; then
-            __print_header "Adding PPA $_APT_REPOSITORIY"
-
-            sudo add-apt-repository -y $_APT_REPOSITORIY
-
-            __print_divider
-
-            _NEED_UPDATE=1
-        fi
+        sudo add-apt-repository -y $_APT_REPOSITORIY
     done
 
-    if [ "$_NEED_UPDATE" = "1" ]; then
-        __print_header "Updating package lists"
+    sudo apt-get -y update
 
-        sudo apt-get -y update
-
-        __print_divider
-    fi
+    __print_divider
 }
 
 __install_common() {
@@ -1233,6 +1316,8 @@ __install_common() {
 }
 
 __install_nginx() {
+    __purge_apache
+
     __print_header "Installing NGINX"
 
     sudo apt-get -y --no-upgrade install nginx
@@ -1326,23 +1411,23 @@ __install_nginx() {
         fi
     done
 
-    local _DATA_FILES=(sites.conf users.conf)
+    local _CONF_FILES=(sites.conf users.conf databases.conf)
 
-    for _DATA_FILE in ${_DATA_FILES[@]}; do
-        local _TEMPLATE_DIR_DEST="/etc/nginx/lemper.io/templates/data"
-        local _DATA_FILE_DEST="${_TEMPLATE_DIR_DEST}/${_DATA_FILE}"
+    for _CONF_FILE in ${_CONF_FILES[@]}; do
+        local _CONF_DIR_DEST="/etc/nginx/lemper.io/templates/conf"
+        local _CONF_FILE_DEST="${_CONF_DIR_DEST}/${_CONF_FILE}"
 
-        if [ ! -d "${_TEMPLATE_DIR_DEST}" ]; then
-            echo -e "Creating template directory: ${_TEMPLATE_DIR_DEST}"
-            sudo mkdir -p "${_TEMPLATE_DIR_DEST}"
+        if [ ! -d "${_CONF_DIR_DEST}" ]; then
+            echo -e "Creating template directory: ${_CONF_DIR_DEST}"
+            sudo mkdir -p "${_CONF_DIR_DEST}"
         fi
 
-        echo -e "Creating template file : ${_DATA_FILE_DEST}"
+        echo -e "Creating template file : ${_CONF_FILE_DEST}"
 
-        if [ -f "./nginx/lemper.io/templates/data/$_DATA_FILE" ]; then
-            sudo cp "./nginx/lemper.io/templates/data/$_DATA_FILE" "${_DATA_FILE_DEST}"
+        if [ -f "./nginx/lemper.io/templates/conf/$_CONF_FILE" ]; then
+            sudo cp "./nginx/lemper.io/templates/conf/$_CONF_FILE" "${_CONF_FILE_DEST}"
         else
-            sudo wget -O "${_DATA_FILE_DEST}" "${_REPO_BASE_URL}/nginx/lemper.io/templates/data/$_DATA_FILE"
+            sudo wget -O "${_CONF_FILE_DEST}" "${_REPO_BASE_URL}/nginx/lemper.io/templates/conf/$_CONF_FILE"
         fi
     done
 
@@ -1365,14 +1450,14 @@ __install_certbot() {
     __print_divider
 }
 
-__install_mariadb() {
-    __print_header "Installing MariaDB server"
+__install_mysql() {
+    __print_header "Installing MySQL server"
 
-    if ! which mariadb >/dev/null 2>&1; then
+    if ! which mysql >/dev/null 2>&1; then
         local _MYSQL_ROOT_PASSWORD=$(__parse_args mysql_root_password ${@})
 
         while [[ -z "$_MYSQL_ROOT_PASSWORD" ]]; do
-            echo -n "Enter MySQL Root Password: [root]"
+            echo -n "Enter MySQL Root Password:"
             stty -echo
 
             #read password
@@ -1404,20 +1489,21 @@ __install_mariadb() {
             stty echo
 
             echo
-
-            _MYSQL_ROOT_PASSWORD=${_MYSQL_ROOT_PASSWORD:-"root"}
         done
 
-        #set password from provided arg
-        sudo debconf-set-selections <<<"mariadb-server mysql-server/root_password password $_MYSQL_ROOT_PASSWORD"
-        sudo debconf-set-selections <<<"mariadb-server mysql-server/root_password_again password $_MYSQL_ROOT_PASSWORD"
-    fi
+        export DEBIAN_FRONTEND=noninteractive
 
-    sudo apt-get -y install --no-upgrade mariadb-server
+        echo "mysql-server-5.7 mysql-server/root_password password $_MYSQL_ROOT_PASSWORD" | sudo debconf-set-selections
+        echo "mysql-server-5.7 mysql-server/root_password_again password $_MYSQL_ROOT_PASSWORD" | sudo debconf-set-selections
+
+        sudo apt-get -y --no-upgrade install mysql-server-5.7 mysql-client
+
+        mysql -u root "-p${_MYSQL_ROOT_PASSWORD}" -e "use mysql; UPDATE user SET authentication_string=PASSWORD('$_MYSQL_ROOT_PASSWORD') WHERE User='root'; flush privileges;"
+    fi
 
     __print_divider
 
-    mysql --version
+    $(which mysql) --version
 
     __print_divider
 }
@@ -1425,6 +1511,8 @@ __install_mariadb() {
 __install_php() {
     for _PHP_VERSION in ${_PHP_VERSIONS[@]}; do
         __print_header "Installing PHP version: ${_PHP_VERSION}"
+
+        __print_divider
 
         for _PHP_EXTENSION in ${_PHP_EXTENSIONS[@]}; do
             __print_header "Installing PHP extension: php${_PHP_VERSION}-${_PHP_EXTENSION}" "-"
@@ -1524,10 +1612,12 @@ __purge_apache() {
     __print_divider
 }
 
-__purge_mariadb() {
-    __print_header "Purging MariaDB"
+__purge_mysql() {
+    __print_header "Purging MySQL"
 
-    sudo apt-get -y purge mariadb*
+    sudo apt-get -y purge mysql*
+
+    sudo rm -rf /etc/mysql
 
     __print_divider
 }
@@ -1616,11 +1706,11 @@ __get_sudoers() {
 }
 
 __get_existing_users() {
-    echo $(find "/etc/nginx/lemper.io/data/users" -type f -exec basename {} \;)
+    echo $(find "/etc/nginx/lemper.io/conf/users" -type f -exec basename {} \;)
 }
 
 __get_existing_sites() {
-    echo $(find "/etc/nginx/lemper.io/data/sites/${1}" -type f -exec basename {} \;)
+    echo $(find "/etc/nginx/lemper.io/conf/sites/${1}" -type f -exec basename {} \;)
 }
 
 # Execute the main command
@@ -1630,23 +1720,23 @@ __main() {
         exit 1
     fi
 
-    if [ ! -d "/etc/nginx/lemper.io" ]; then
-        echo "It is appear that you did not install the LEMPER.IO yet. Would you like to install it now ?"
+    # if [ ! -d "/etc/nginx/lemper.io" ]; then
+    #     echo "It is appear that you did not install the LEMPER.IO yet. Would you like to install it now ?"
 
-        local _INSTALL_NOW=""
+    #     local _INSTALL_NOW=""
 
-        select _ITEM in ${_OPTIONS_YES_NO[@]}; do
-            _INSTALL_NOW=$_ITEM
-            break
-        done
+    #     select _ITEM in ${_OPTIONS_YES_NO[@]}; do
+    #         _INSTALL_NOW=$_ITEM
+    #         break
+    #     done
 
-        if [ "${_INSTALL_NOW}" != "yes" ]; then
-            echo "Goodbye!"
-            exit 1
-        fi
+    #     if [ "${_INSTALL_NOW}" != "yes" ]; then
+    #         echo "Goodbye!"
+    #         exit 1
+    #     fi
 
-        _lemper_install ${@:2}
-    fi
+    #     _lemper_install ${@:2}
+    # fi
 
     _CALLBACK=$(echo ${1} | sed 's/^_\+\(.*\)$/\1/')
 
