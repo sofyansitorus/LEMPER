@@ -11,6 +11,8 @@ _DB_NAME=""
 _DB_USER=""
 _DB_PASSWORD=""
 
+_PROMPT_PASSWORD=""
+
 _lemper_install() {
     __print_header "Starting the install procedure"
     __print_divider
@@ -64,42 +66,9 @@ _user_add() {
         egrep "^$_USERNAME" /etc/passwd >/dev/null
     done
 
-    local _PASSWORD=$(__parse_args password ${@})
+    __prompt_password "" "Enter Password:"
 
-    while [[ -z "$_PASSWORD" ]]; do
-        echo -n "Enter password: "
-        stty -echo
-
-        #read password
-        local _CHARCOUNT=0
-        local _PROMPT=''
-
-        while IFS= read -p "$_PROMPT" -r -s -n 1 ch; do
-            # Enter - accept password
-            if [[ $ch == $'\0' ]]; then
-                break
-            fi
-
-            # Backspace
-            if [[ $ch == $'\177' ]]; then
-                if [ $_CHARCOUNT -gt 0 ]; then
-                    _CHARCOUNT=$((_CHARCOUNT - 1))
-                    _PROMPT=$'\b \b'
-                    _PASSWORD="${_PASSWORD%?}"
-                else
-                    _PROMPT=''
-                fi
-            else
-                _CHARCOUNT=$((_CHARCOUNT + 1))
-                _PROMPT='*'
-                _PASSWORD+="$ch"
-            fi
-        done
-
-        stty echo
-
-        echo
-    done
+    local _PASSWORD=$_PROMPT_PASSWORD
 
     local _SUDO=$(__parse_args sudo ${@})
 
@@ -1421,12 +1390,15 @@ __install_nginx() {
 __install_certbot() {
     __print_header "Installing Certbot"
 
-    sudo apt-get -y install software-properties-common
+    if ! which certbot >/dev/null 2>&1; then
+        sudo apt-get -y install software-properties-common
 
-    sudo add-apt-repository -y universe
-    sudo add-apt-repository -y ppa:certbot/certbot
+        sudo add-apt-repository -y universe
+        sudo add-apt-repository -y ppa:certbot/certbot
 
-    sudo apt-get -y --no-upgrade update
+        sudo apt-get -y update
+    fi
+
     sudo apt-get -y --no-upgrade install certbot
 
     __print_divider
@@ -1517,6 +1489,10 @@ __install_php() {
 
             sudo apt-get -y --no-upgrade install "php${_PHP_VERSION}-${_PHP_EXTENSION}"
         done
+
+        __print_divider
+
+        $(which "php${_PHP_VERSION}") --version
 
         __print_divider
     done
@@ -1712,6 +1688,47 @@ __get_existing_users() {
 
 __get_existing_sites() {
     echo $(find "/etc/nginx/lemper.io/conf/sites/${1}" -type f -exec basename {} \;)
+}
+
+__prompt_password() {
+    unset _PROMPT_PASSWORD
+
+    _PROMPT_PASSWORD=$1
+
+    while [[ -z "$_PROMPT_PASSWORD" ]]; do
+        echo -n $2
+        stty -echo
+
+        #read password
+        local _CHARCOUNT=0
+        local _PROMPT=''
+
+        while IFS= read -p "$_PROMPT" -r -s -n 1 ch; do
+            # Enter - accept password
+            if [[ $ch == $'\0' ]]; then
+                break
+            fi
+
+            # Backspace
+            if [[ $ch == $'\177' ]]; then
+                if [ $_CHARCOUNT -gt 0 ]; then
+                    _CHARCOUNT=$((_CHARCOUNT - 1))
+                    _PROMPT=$'\b \b'
+                    _PROMPT_PASSWORD="${_PROMPT_PASSWORD%?}"
+                else
+                    _PROMPT=''
+                fi
+            else
+                _CHARCOUNT=$((_CHARCOUNT + 1))
+                _PROMPT='*'
+                _PROMPT_PASSWORD+="$ch"
+            fi
+        done
+
+        stty echo
+
+        echo
+    done
 }
 
 # Execute the main command
