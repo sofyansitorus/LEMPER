@@ -532,6 +532,10 @@ __install_memcached() {
 
     sudo apt-get install -y memcached
 
+    sudo echo -e "\n-U 0" >>/etc/memcached.conf
+
+    sudo systemctl restart memcached
+
     __print_divider
 }
 
@@ -775,6 +779,8 @@ __purge_memcached() {
     __print_header "Purging Memcached"
 
     sudo apt-get -y --purge remove memcached\*
+
+    sudo rm -rf /etc/memcached.conf
 
     __print_divider
 }
