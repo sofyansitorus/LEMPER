@@ -62,173 +62,61 @@ __action_user_add() {
         sudo usermod -aG sudo ${_USERNAME}
     fi
 
+    __generate_user_data $_USERNAME
+
     echo -e "User $_USERNAME has been added!"
 
-    local _USER_CONF_DIR="/etc/nginx/lemper.io/conf/users"
-    local _USER_CONF_FILE="${_USER_CONF_DIR}/${_USERNAME}"
-
-    if [ ! -d "${_USER_CONF_DIR}" ]; then
-        sudo mkdir -p "${_USER_CONF_DIR}"
-    fi
-
-    if [ -f "./nginx/lemper.io/templates/conf/users.conf" ]; then
-        sudo cp "./nginx/lemper.io/templates/conf/users.conf" "${_USER_CONF_FILE}"
-    elif [ -f "/etc/nginx/lemper.io/templates/conf/users.conf" ]; then
-        sudo cp "/etc/nginx/lemper.io/templates/conf/users.conf" "${_USER_CONF_FILE}"
-    else
-        sudo wget -O "/etc/nginx/lemper.io/templates/conf/users.conf" "${_REPO_BASE_URL}/nginx/lemper.io/templates/conf/users.conf"
-        sudo cp "/etc/nginx/lemper.io/templates/conf/users.conf" "${_USER_CONF_FILE}"
-    fi
-
-    sed -i -e "s/{{USERNAME}}/${_USERNAME}/g" "${_USER_CONF_FILE}"
-    sed -i -e "s/{{PASSWORD}}/${_CRYPTED_PASS}/g" "${_USER_CONF_FILE}"
-    sed -i -e "s/{{SUDO}}/${_SUDO}/g" "${_USER_CONF_FILE}"
-
     __print_divider
+}
+
+__action_user_delete() {
+    __print_header "Deleting existing user"
+
+    __prompt_existing_users "--prompt_response=$(__parse_args username ${@})"
+}
+
+__generate_user_data() {
+    local _USERNAME=$1
+
+    if [ -z "$_USERNAME" ]; then
+        echo "Username is required"
+        exit 1
+    fi
 
     for _PHP_VERSION in ${_PHP_VERSIONS[@]}; do
-        __generate_user_php_pool "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
-        __generate_user_php_fastcgi "--php_version=${_PHP_VERSION}" "--username=${_USERNAME}" "--restart_service=no"
+        local _PHP_POOL_CONF_FILE=$(__php_pool_conf_file "${_PHP_VERSION}" "${_USERNAME}")
+        local _PHP_FASTCGI_CONF_FILE=$(__php_fastcgi_conf_file "${_PHP_VERSION}" "${_USERNAME}")
+        local _PHP_FASTCGI_SOCK_FILE=$(__php_fastcgi_sock_file "${_PHP_VERSION}" "${_USERNAME}")
+
+        echo "Copying file ${_PHP_POOL_CONF_FILE}"
+
+        if [ -f "./nginx/lemper.io/templates/php_pool.conf" ]; then
+            sudo cp "./nginx/lemper.io/templates/php_pool.conf" "${_PHP_POOL_CONF_FILE}"
+        elif [ -f "/etc/nginx/lemper.io/templates/php_pool.conf" ]; then
+            sudo cp "/etc/nginx/lemper.io/templates/php_pool.conf" "${_PHP_POOL_CONF_FILE}"
+        else
+            sudo wget -O "/etc/nginx/lemper.io/templates/php_pool.conf" "${_REPO_BASE_URL}/nginx/lemper.io/templates/php_pool.conf"
+            sudo cp "/etc/nginx/lemper.io/templates/php_pool.conf" "${_PHP_POOL_CONF_FILE}"
+        fi
+
+        sed -i -e "s#{{USERNAME}}#${_USERNAME}#g" "${_PHP_POOL_CONF_FILE}"
+        sed -i -e "s#{{SOCK_FILE}}#${_PHP_FASTCGI_SOCK_FILE}#g" "${_PHP_POOL_CONF_FILE}"
+
+        echo "Copying file ${_PHP_FASTCGI_CONF_FILE}"
+
+        if [ -f "./nginx/lemper.io/templates/php_fastcgi.conf" ]; then
+            sudo cp "./nginx/lemper.io/templates/php_fastcgi.conf" "${_PHP_FASTCGI_CONF_FILE}"
+        elif [ -f "/etc/nginx/lemper.io/templates/php_fastcgi.conf" ]; then
+            sudo cp "/etc/nginx/lemper.io/templates/php_fastcgi.conf" "${_PHP_FASTCGI_CONF_FILE}"
+        else
+            sudo wget -O "/etc/nginx/lemper.io/templates/php_fastcgi.conf" "${_REPO_BASE_URL}/nginx/lemper.io/templates/php_fastcgi.conf"
+            sudo cp "/etc/nginx/lemper.io/templates/php_fastcgi.conf" "${_PHP_FASTCGI_CONF_FILE}"
+        fi
+
+        sed -i -e "s#{{SOCK_FILE}}#${_PHP_FASTCGI_SOCK_FILE}#g" "${_PHP_FASTCGI_CONF_FILE}"
 
         sudo service "php${_PHP_VERSION}-fpm" restart
     done
-}
-
-__generate_user_php_pool() {
-    __print_header "Generating PHP-FPM pool file"
-
-    local _USERS=$(__get_existing_users)
-
-    if [ -z "$_USERS" ]; then
-        echo "No users available. Please add new using the 'user_add' command!"
-        exit 1
-    fi
-
-    local _USERNAME=$(__parse_args username ${@})
-
-    while [[ -z "$_USERNAME" ]]; do
-        echo -e "Select user: "
-
-        local COLUMNS=0
-
-        select _ITEM in ${_USERS[@]}; do
-            _USERNAME=$_ITEM
-            break
-        done
-    done
-
-    if [ $(__is_valid_user "$_USERNAME") -ne 0 ]; then
-        echo "User $_USERNAME is invalid!"
-        exit 1
-    fi
-
-    local _PHP_VERSION=$(__parse_args php_version ${@})
-
-    if [ -z "$_PHP_VERSION" ]; then
-        echo -e "Select the PHP version configuration: [7.2]"
-
-        local COLUMNS=0
-
-        select _ITEM in ${_PHP_VERSIONS[@]}; do
-            _PHP_VERSION=$_ITEM
-            break
-        done
-
-        _PHP_VERSION=${_PHP_VERSION:-"7.2"}
-    fi
-
-    local _CONF_FILE=$(__php_pool_conf_file "--username=${_USERNAME}" "--php_version=${_PHP_VERSION}" ${@})
-    local _SOCK_FILE=$(__php_fastcgi_sock_file "--username=${_USERNAME}" "--php_version=${_PHP_VERSION}" ${@})
-
-    echo "Copying file ${_CONF_FILE}"
-
-    if [ -f "./nginx/lemper.io/templates/php_pool.conf" ]; then
-        sudo cp "./nginx/lemper.io/templates/php_pool.conf" "${_CONF_FILE}"
-    elif [ -f "/etc/nginx/lemper.io/templates/php_pool.conf" ]; then
-        sudo cp "/etc/nginx/lemper.io/templates/php_pool.conf" "${_CONF_FILE}"
-    else
-        sudo wget -O "/etc/nginx/lemper.io/templates/php_pool.conf" "${_REPO_BASE_URL}/nginx/lemper.io/templates/php_pool.conf"
-        sudo cp "/etc/nginx/lemper.io/templates/php_pool.conf" "${_CONF_FILE}"
-    fi
-
-    sed -i -e "s#{{USERNAME}}#${_USERNAME}#g" "${_CONF_FILE}"
-    sed -i -e "s#{{SOCK_FILE}}#${_SOCK_FILE}#g" "${_CONF_FILE}"
-
-    local _RESTART_SERVICE=$(__parse_args restart_service ${@})
-
-    if [ "$_RESTART_SERVICE" != "no" ]; then
-        sudo service "php${_PHP_VERSION}-fpm" restart
-    fi
-
-    __print_divider
-}
-
-__generate_user_php_fastcgi() {
-    __print_header "Generating PHP-FastCGI configuration file"
-
-    local _USERS=$(__get_existing_users)
-
-    if [ -z "$_USERS" ]; then
-        echo "No users available. Please add new using the 'user_add' command!"
-        exit 1
-    fi
-
-    local _USERNAME=$(__parse_args username ${@})
-
-    while [[ -z "$_USERNAME" ]]; do
-        echo -e "Select user: "
-
-        local COLUMNS=0
-
-        select _ITEM in ${_USERS[@]}; do
-            _USERNAME=$_ITEM
-            break
-        done
-    done
-
-    if [ $(__is_valid_user "$_USERNAME") -ne 0 ]; then
-        echo "User $_USERNAME is invalid!"
-        exit 1
-    fi
-
-    local _PHP_VERSION=$(__parse_args php_version ${@})
-
-    if [ -z "$_PHP_VERSION" ]; then
-        echo -e "Select the PHP version configuration: [7.2]"
-
-        local COLUMNS=0
-
-        select _ITEM in ${_PHP_VERSIONS[@]}; do
-            _PHP_VERSION=$_ITEM
-            break
-        done
-
-        _PHP_VERSION=${_PHP_VERSION:-"7.2"}
-    fi
-
-    local _CONF_FILE=$(__php_fastcgi_conf_file "--username=${_USERNAME}" "--php_version=${_PHP_VERSION}" ${@})
-    local _SOCK_FILE=$(__php_fastcgi_sock_file "--username=${_USERNAME}" "--php_version=${_PHP_VERSION}" ${@})
-
-    echo "Copying file ${_CONF_FILE}"
-
-    if [ -f "./nginx/lemper.io/templates/php_fastcgi.conf" ]; then
-        sudo cp "./nginx/lemper.io/templates/php_fastcgi.conf" "${_CONF_FILE}"
-    elif [ -f "/etc/nginx/lemper.io/templates/php_fastcgi.conf" ]; then
-        sudo cp "/etc/nginx/lemper.io/templates/php_fastcgi.conf" "${_CONF_FILE}"
-    else
-        sudo wget -O "/etc/nginx/lemper.io/templates/php_fastcgi.conf" "${_REPO_BASE_URL}/nginx/lemper.io/templates/php_fastcgi.conf"
-        sudo cp "/etc/nginx/lemper.io/templates/php_fastcgi.conf" "${_CONF_FILE}"
-    fi
-
-    sed -i -e "s#{{SOCK_FILE}}#${_SOCK_FILE}#g" "${_CONF_FILE}"
-
-    local _RESTART_SERVICE=$(__parse_args restart_service ${@})
-
-    if [ "$_RESTART_SERVICE" != "no" ]; then
-        sudo service "php${_PHP_VERSION}-fpm" restart
-    fi
-
-    __print_divider
 }
 
 # Install
@@ -843,63 +731,27 @@ __purge_yarn() {
 
 # Helpers
 __php_pool_conf_file() {
-    local _USERNAME=$(__parse_args username ${@})
+    if [ ! -d "/etc/php/${1}/fpm/pool.d" ]; then
+        sudo mkdir -p "/etc/php/${1}/fpm/pool.d"
+    fi
 
-    while [[ -z "$_USERNAME" ]]; do
-        read -p "Enter Username: " _USERNAME
-    done
-
-    local _PHP_VERSION=$(__parse_args php_version ${@})
-
-    while [[ -z "$_PHP_VERSION" ]]; do
-        read -p "Enter PHP Version: " _PHP_VERSION
-    done
-
-    echo "/etc/php/${_PHP_VERSION}/fpm/pool.d/${_USERNAME}.conf"
+    echo "/etc/php/${1}/fpm/pool.d/${2}.conf"
 }
 
 __php_fastcgi_conf_file() {
-    local _USERNAME=$(__parse_args username ${@})
-
-    while [[ -z "$_USERNAME" ]]; do
-        read -p "Enter Username: " _USERNAME
-    done
-
-    local _PHP_VERSION=$(__parse_args php_version ${@})
-
-    while [[ -z "$_PHP_VERSION" ]]; do
-        read -p "Enter PHP Version: " _PHP_VERSION
-    done
-
-    local _BASE_DIR="/etc/nginx/lemper.io/fastcgi/${_USERNAME}"
-
-    if [ ! -d "${_BASE_DIR}" ]; then
-        sudo mkdir -p "${_BASE_DIR}"
+    if [ ! -d "/etc/php/${1}/fpm/fastcgi/conf" ]; then
+        sudo mkdir -p "/etc/php/${1}/fpm/fastcgi/conf"
     fi
 
-    echo "${_BASE_DIR}/php${_PHP_VERSION}.conf"
+    echo "/etc/php/${1}/fpm/fastcgi/conf/${2}.conf"
 }
 
 __php_fastcgi_sock_file() {
-    local _USERNAME=$(__parse_args username ${@})
-
-    while [[ -z "$_USERNAME" ]]; do
-        read -p "Enter Username: " _USERNAME
-    done
-
-    local _PHP_VERSION=$(__parse_args php_version ${@})
-
-    while [[ -z "$_PHP_VERSION" ]]; do
-        read -p "Enter PHP Version: " _PHP_VERSION
-    done
-
-    local _BASE_DIR="/var/run/lemper.io/${_USERNAME}"
-
-    if [ ! -d "${_BASE_DIR}" ]; then
-        sudo mkdir -p "${_BASE_DIR}"
+    if [ ! -d "/etc/php/${1}/fpm/fastcgi/sock" ]; then
+        sudo mkdir -p "/etc/php/${1}/fpm/fastcgi/sock"
     fi
 
-    echo "${_BASE_DIR}/php${_PHP_VERSION}-fpm.sock"
+    echo "/etc/php/${1}/fpm/fastcgi/sock/${2}.sock"
 }
 
 __check_os() {
@@ -1150,45 +1002,6 @@ __prompt_password() {
     _PROMPT_RESPONSE=$_RESPONSE
 }
 
-__prompt_existing_users() {
-    local _USERS=$(__get_existing_users)
-
-    if [ -z "$_USERS" ]; then
-        echo "No users available. Please add new using the 'user_add' command!"
-        exit 1
-    fi
-
-    local _LABEL=$(__parse_args label ${@})
-
-    if [ -z "${_LABEL}" ]; then
-        _LABEL="Select existing user:"
-    fi
-
-    local _USERNAME=$(__parse_args username ${@})
-
-    while [ -z "$_USERNAME" ]; do
-
-        echo "kopet"
-        echo -e "${_LABEL} "
-
-        COLUMNS=0
-
-        select _ITEM in ${_USERS[@]}; do
-            _USERNAME=$_ITEM
-            break
-        done
-
-        COLUMNS=$_COLUMNS
-    done
-
-    if [ $(__is_valid_user "$_USERNAME") -ne 0 ]; then
-        echo "User $_USERNAME is invalid!"
-        exit 1
-    fi
-
-    echo $_USERNAME
-}
-
 __prompt_user() {
     unset _PROMPT_RESPONSE
 
@@ -1224,6 +1037,52 @@ __prompt_user() {
         echo "User $_RESPONSE is invalid!"
         exit 1
     fi
+
+    _PROMPT_RESPONSE=$_RESPONSE
+}
+
+__prompt_existing_users() {
+    unset _PROMPT_RESPONSE
+
+    local _USERS=($(__get_existing_users))
+
+    if [ -z "$_USERS" ]; then
+        echo "No users available. Please add new using the 'user_add' command!"
+        exit 1
+    fi
+
+    local _LABEL=$(__parse_args prompt_label ${@})
+
+    if [ -z "${_LABEL}" ]; then
+        _LABEL="Select existing user:"
+    fi
+
+    local _RESPONSE=$(__parse_args prompt_response ${@})
+
+    if [ -n "${_RESPONSE}" ]; then
+        _FOUND=""
+        _RESPONSE=""
+    fi
+
+    echo "_RESPONSE=$_RESPONSE"
+    echo "_RESPONSE_MATCH=${_USERS[$_RESPONSE]}"
+
+    while [ -z "$_RESPONSE" ]; do
+        echo -e "${_LABEL} "
+
+        COLUMNS=0
+
+        select _ITEM in ${_USERS[@]}; do
+            _RESPONSE=$_ITEM
+            break
+        done
+
+        if [ -z "${_USERS[$_RESPONSE]}" ]; then
+            _RESPONSE=""
+        fi
+
+        COLUMNS=$_COLUMNS
+    done
 
     _PROMPT_RESPONSE=$_RESPONSE
 }
@@ -1319,7 +1178,8 @@ __prompt_no_yes() {
 }
 
 __action_test() {
-    __prompt_no_yes
+    __generate_user_data kopet
+    # __prompt_no_yes
     # local _DEFAULT="ddd"
     # local _USERS=($(__get_existing_users))
 
@@ -1341,7 +1201,7 @@ __action_test() {
     #     fi
     # done
 
-    echo "_PROMPT_RESPONSE=$_PROMPT_RESPONSE"
+    # echo "_PROMPT_RESPONSE=$_PROMPT_RESPONSE"
 }
 
 # Execute the main command
